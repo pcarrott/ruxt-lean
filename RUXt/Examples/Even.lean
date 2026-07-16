@@ -10,52 +10,59 @@ This file formalises a small (unsound) Rust library for even numbers and shows, 
 the refutation algorithm of `RUXt/Model/Refute.lean`, that the library is *inadequate*:
 it has a well-typed main program whose execution exhibits undefined behaviour. -/
 
-/-- Creates an even number from an integer. -/
-def newBody : Expr :=
-  .pure (.add (.var "n") (.minus (.mod (.var "n") (.int 2))))
-/-- Increments its input number. -/
-def succBody : Expr :=
-  .pure (.add (.var "x") (.int 1))
-/-- Computes the next even number. -/
-def nextBody : Expr :=
-  .letIn (.named "y") (.call "succ" [.var "x"]) (.call "succ" [.var "y"])
-/-- Checks whether a pure expression is an even number. -/
-abbrev isEven (p : Pure) : Pure :=
-  .eq (.mod p (.int 2)) (.int 0)
-/-- Performs no operation on even inputs, exhibits UB on odd inputs. -/
-def noopBody : Expr :=
-  .choice
-    (.letIn (.named "g") (.pure (isEven (.var "x")))
-      (.letIn .anon (.assume (.var "g")) .unit))
-    (.letIn (.named "g") (.pure (.not (isEven (.var "x"))))
-      (.letIn .anon (.assume (.var "g")) .error))
-
-/-- `i32` is modelled as the base type `int`. -/
-abbrev IntTy : Ty := .base .int
-/-- The base type `unit`. -/
-abbrev UnitTy : Ty := .base .unit
 /-- The custom struct type `Even`. -/
-abbrev EvenTy : Ty := .custom "Even"
-/-- The `Even` library. -/
-noncomputable def evenLib : Library := fun f =>
-  if f = "new" then
-    Part.some ⟨[("n", IntTy)], newBody, EvenTy, by decide⟩
-  else if f = "succ" then
-    Part.some ⟨[("x", EvenTy)], succBody, EvenTy, by decide⟩
-  else if f = "next" then
-    Part.some ⟨[("x", EvenTy)], nextBody, EvenTy, by decide⟩
-  else if f = "noop" then
-    Part.some ⟨[("x", EvenTy)], noopBody, UnitTy, by decide⟩
-  else Part.none
+abbrev EvenTy : Ty := .custom TyInt "Even"
 
-theorem evenLib_new :
-    evenLib.MapsTo "new" ⟨[("n", IntTy)], newBody, EvenTy, by decide⟩ := by
+abbrev newBody : Expr :=
+  .pure (.add (.var "n") (.minus (.mod (.var "n") (.int 2))))
+/-- Creates an even number from an integer. -/
+def newImpl : FunImpl := ⟨[("n", TyInt)], newBody, EvenTy, true⟩
+
+abbrev succBody : Expr :=
+  .pure (.add (.var "x") (.int 1))
+/-- Increments its input number. -/
+def succImpl : FunImpl := ⟨[("x", EvenTy)], succBody, EvenTy, true⟩
+
+abbrev nextBody : Expr := .letIn (.named "x") (.call "succ" [.var "x"]) (.call "succ" [.var "x"])
+/-- Computes the next even number. -/
+def nextImpl : FunImpl := ⟨[("x", EvenTy)], nextBody, EvenTy, true⟩
+
+abbrev isEven (p : Pure) : Pure := .eq (.mod p (.int 2)) (.int 0)
+abbrev noopBody : Expr := .choice
+  (.letIn (.named "g") (.pure (isEven (.var "x")))
+    (.letIn .anon (.assume (.var "g")) .unit))
+  (.letIn (.named "g") (.pure (.not (isEven (.var "x"))))
+    (.letIn .anon (.assume (.var "g")) .error))
+/-- Performs no operation on even inputs, exhibits UB on odd inputs. -/
+def noopImpl : FunImpl := ⟨[("x", EvenTy)], noopBody, TyUnit, true⟩
+
+/-- The `Even` library. -/
+noncomputable def evenLib : Library where
+  implementations := fun f =>
+    if f = "new" then newImpl
+    else if f = "succ" then succImpl
+    else if f = "next" then nextImpl
+    else if f = "noop" then noopImpl
+    else Part.none
+  paramsNodup := by
+    intro f γ hγ; split_ifs at hγ <;>
+      simp at hγ <;> subst hγ <;> simp [FunImpl.ParamsNodup] <;> trivial
+  bodiesTypecheck := by
+    intro f γ hγ; split_ifs at hγ <;>
+      simp at hγ <;> subst hγ <;> simp [FunImpl.Typechecks, VarCtx.from]
+    · simp [newImpl, SafeProgram, CheckPure, CheckTerm, Ty.compatible]; trivial
+    · simp [succImpl, SafeProgram, CheckPure, CheckTerm, Ty.compatible]; trivial
+    · simp [nextImpl, succImpl, SafeProgram, CheckTerms, CheckTerm]
+      exact ⟨EvenTy, by simp [Ty.compatible]⟩
+    · simp [noopImpl, SafeProgram, CheckPure, CheckTerm, Ty.compatible]; trivial
+
+theorem evenLib_new : evenLib.MapsTo "new" newImpl := by
   simp [Library.MapsTo, evenLib]
-theorem evenLib_succ :
-    evenLib.MapsTo "succ" ⟨[("x", EvenTy)], succBody, EvenTy, by decide⟩ := by
+theorem evenLib_succ : evenLib.MapsTo "succ" succImpl := by
   simp [Library.MapsTo, evenLib]
-theorem evenLib_noop :
-    evenLib.MapsTo "noop" ⟨[("x", EvenTy)], noopBody, UnitTy, by decide⟩ := by
+theorem evenLib_next : evenLib.MapsTo "next" nextImpl := by
+  simp [Library.MapsTo, evenLib]
+theorem evenLib_noop : evenLib.MapsTo "noop" noopImpl := by
   simp [Library.MapsTo, evenLib]
 
 /-! ### Summaries -/
@@ -66,7 +73,7 @@ abbrev SpecCtx.fromPicks (ςs : SummPicks) (f : Fid)
   SpecCtx.update ⟨_, mergeVals ςs, mergePosts ςs, ε, Φ⟩ f ∅
 
 /-- Picks for `new`: the base `int` summary. -/
-def ςs1 : SummPicks := [(IntTy, baseSummary.{0} .int)]
+def ςs1 : SummPicks := [(TyInt, baseSummary.{0} .int)]
 /-- Post of the `even` summary: `new` maps `.int z` to the even `.int (z-z%2)`. -/
 def Φeven : Val → Tele.triple ςs1 -t> Asrt := fun r v₀ z =>
   ⌞ v₀ = .int z ∧ r = .int (z - z.tmod 2) ⌟
@@ -86,7 +93,7 @@ theorem tryRefute_even : TryRefute evenLib baseSummCtx (.inl S1) := by
   case satPost =>
     exact ⟨∅, rfl, rfl, by norm_num [Int.tmod]⟩
   case derivPost =>
-    refine ⟨[("n", IntTy)], newBody, by decide, evenLib_new, rfl, rfl, ?_⟩
+    refine ⟨newImpl.params, newImpl.body, evenLib_new, rfl, rfl, ?_⟩
     -- Select RISL as our logic for executing the function call
     refine ⟨risl, SpecCtx.fromPicks ςs1 "new" .lok Φeven,
       ⟨.update .empty rfl evenLib_new ?_, .call (by simp [SpecCtx.update_apply])⟩⟩
@@ -132,7 +139,7 @@ theorem tryRefute_odd : TryRefute evenLib S1 (.inl S2) := by
   case satPost =>
     exact ⟨∅, rfl, rfl, by norm_num [Int.tmod]⟩
   case derivPost =>
-    refine ⟨[("x", EvenTy)], succBody, by decide, evenLib_succ, rfl, rfl, ?_⟩
+    refine ⟨succImpl.params, succImpl.body, evenLib_succ, rfl, rfl, ?_⟩
     -- Select RISL as our logic for executing the function call
     refine ⟨risl, SpecCtx.fromPicks ςs2 "succ" .lok Φodd,
       ⟨.update .empty rfl evenLib_succ ?_, .call (by simp [SpecCtx.update_apply])⟩⟩
@@ -168,7 +175,7 @@ def witnessExpr : Expr :=
 /-- Refutation step 3: `noop` on the odd summary reaches a non-`ok` state, so it
 yields the type-unsoundness witness `witnessExpr`. -/
 theorem tryRefute_noop : TryRefute evenLib S2 (.inr witnessExpr) := by
-  refine ⟨ςs3, ?summIncl, "noop", ["x"], UnitTy, .lerr, Φnoop, ?derivPost,
+  refine ⟨ςs3, ?summIncl, "noop", ["x"], TyUnit, .lerr, Φnoop, ?derivPost,
     .unit, ⟨.int 1, .int 0, .int 0, 0, .unit⟩, ?satPost, by simp, rfl⟩
   case summIncl =>
     intro τ ς h
@@ -178,7 +185,7 @@ theorem tryRefute_noop : TryRefute evenLib S2 (.inr witnessExpr) := by
   case satPost =>
     exact ⟨∅, rfl, rfl, by norm_num [Int.tmod]⟩
   case derivPost =>
-    refine ⟨[("x", EvenTy)], noopBody, by decide, evenLib_noop, rfl, rfl, ?_⟩
+    refine ⟨noopImpl.params, noopImpl.body, evenLib_noop, rfl, rfl, ?_⟩
     -- Select RISL as our logic for executing the function call
     refine ⟨risl, SpecCtx.fromPicks ςs3 "noop" .lerr Φnoop,
       ⟨.update .empty rfl evenLib_noop ?_, .call (by simp [SpecCtx.update_apply])⟩⟩

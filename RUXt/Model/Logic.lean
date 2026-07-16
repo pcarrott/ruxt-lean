@@ -76,21 +76,18 @@ theorem ux_frame_triple_spec {tt : Tele} {Λ : Library}
   obtain hux := ux_triple_preservation hux
   cases εₗ
   · cases hε
-    obtain ⟨h, hP, ε, Hε, hstep⟩ := hux _ _ _ hΦ
-    cases Hε
+    obtain ⟨h, hP, ε, ⟨⟩, hstep⟩ := hux _ _ _ hΦ
     exact ⟨h, hP, hstep⟩
   · let .unit := r
     cases hε
-    obtain ⟨h, hP, ε, hε, hstep⟩ := hux _ _ _ hΦ
-    cases hε
+    obtain ⟨h, hP, ε, ⟨⟩, hstep⟩ := hux _ _ _ hΦ
     exact ⟨h, hP, hstep⟩
   · let .loc ⟨b, i⟩ := r
     cases hε
     specialize hux args .unit h' ?_
     · simp_all [teleBind_apply]
       exact ⟨b, i, hΦ⟩
-    obtain ⟨h, hP, ε, hε, hstep⟩ := hux
-    cases hε
+    obtain ⟨h, hP, ε, ⟨⟩, hstep⟩ := hux
     exact ⟨h, hP, hstep⟩
 
 /-! ### UX logics -/

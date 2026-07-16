@@ -166,10 +166,11 @@ abbrev Expr.substSym (body : Expr) (xs : List (PVar × Ty))
 inductive WfSpecCtx (Λ : Library) : SpecCtx → Prop
   | empty :
       WfSpecCtx Λ ∅
-  | update {Γ Γ' : SpecCtx} {tt : Tele} {f xs body τ hdup}
-      {vals : tt -t> List Val} {P ε Φ}  :
+  | update {Γ Γ' : SpecCtx} {tt : Tele} {f : Fid} {vals : tt -t> List Val}
+        {P : tt -t> Asrt} {ε : LExit} {Φ : Val → tt -t> Asrt}
+        {xs : List (PVar × Ty)} {body : Expr} {τ : Ty} {safe : Bool} :
       WfSpecCtx Λ Γ → Γ' = Γ.update ⟨tt, vals, P, ε, Φ⟩ f →
-      Λ.MapsTo f ⟨xs, body, τ, hdup⟩ →
+      Λ.MapsTo f ⟨xs, body, τ, safe⟩ →
         (Γ ⊢ ⌈P⌉ (body.substSym xs vals) ⌈ε, Φ⌉) →
       WfSpecCtx Λ Γ'
 @[inherit_doc] scoped infix:50 " ≺ₛ " => WfSpecCtx
@@ -207,9 +208,9 @@ theorem WfSpec.exit_ne_lmiss {Γ : SpecCtx} {tt : Tele} {triple : SymTriple tt}
 
 /-- A sound call triple can be recovered from a sound body triple. -/
 theorem callTriple_of_body {Λ : Library} {f : String} {xs : List (PVar × Ty)}
-    {body : Expr} {τ : Ty} {hdup} {tt : Tele}
+    {body : Expr} {τ : Ty} {safe : Bool} {tt : Tele}
     {vals : tt -t> List Val} {P : tt -t> Asrt} {ε : LExit} {Φ : Val → tt -t> Asrt}
-    (hmaps : Λ.MapsTo f ⟨xs, body, τ, hdup⟩)
+    (hmaps : Λ.MapsTo f ⟨xs, body, τ, safe⟩)
     (hbody : UXFrameTriple Λ ⟨P, body.substSym xs vals, ε, Φ⟩) :
     UXFrameTriple Λ ⟨P, vals.map (fun l => .call f (Term.ofVals l)), ε, Φ⟩ := by
   intro args v h' hΦ
@@ -230,8 +231,7 @@ theorem uxframe_letIn {Λ : Library} {tt : Tele} {x : Binder} {e₁ e₂ : tt -t
       .letIn x (e₁.apply args) (e₂.apply args), ε, Φ⟩ := by
   intro args r h' hΦ
   obtain ⟨h'', hΦ', ε₂, hε₂, hstep₂⟩ := h₂ args r h' hΦ
-  obtain ⟨h, hP, ε₁, hε₁, hstep₁⟩ := h₁ args v h'' hΦ'
-  cases hε₁
+  obtain ⟨h, hP, ε₁, ⟨⟩, hstep₁⟩ := h₁ args v h'' hΦ'
   simp_all [teleBind_apply, teleMap_apply]
   exact ⟨h, hP, .letIn hstep₁ hstep₂⟩
 

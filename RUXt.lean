@@ -7,9 +7,9 @@ import RUXt.Lib.PFun
 import RUXt.Lib.Telescopes
 import RUXt.Lang.Types
 import RUXt.Lang.Lang
+import RUXt.Lang.Typechecker
 import RUXt.Lang.Library
 import RUXt.Lang.Semantics
-import RUXt.Lang.TypeChecker
 import RUXt.Model.Assertion
 import RUXt.Model.Logic
 import RUXt.Model.Summary

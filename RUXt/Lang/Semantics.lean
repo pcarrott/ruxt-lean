@@ -154,8 +154,8 @@ inductive BigStep (Λ : Library) : Heap → Expr → Heap → Exit → Prop
       t.eval = some (.loc l) →
       h.MapsTo l.1 (.block sz bh) → l.2 ∉ bh.dom →
       BigStep Λ h (.load t) h .err
-  | call {f : Fid} {xs e τ P} {ts : List Term} {h h' : Heap} {ε : Exit} :
-      Λ.MapsTo f ⟨xs, e, τ, P⟩ → BigStep Λ h (e.substs (xs.map Prod.fst) ts) h' ε →
+  | call {f : Fid} {xs e τ safe} {ts : List Term} {h h' : Heap} {ε : Exit} :
+      Λ.MapsTo f ⟨xs, e, τ, safe⟩ → BigStep Λ h (e.substs (xs.map Prod.fst) ts) h' ε →
       BigStep Λ h (.call f ts) h' ε
 
 @[inherit_doc] scoped notation:50 Λ:51 " ⊢ " "⟨" h " | " e "⟩" " ⇓ " "⟨" h' " | " ε "⟩" =>
@@ -242,8 +242,8 @@ inductive FrameStep (Λ : Library) : Heap → Expr → Heap → Exit → Prop
       t.eval = some (.loc l) →
       h.MapsTo l.1 (.block sz bh) → l.2 ∉ bh.dom →
       FrameStep Λ h (.load t) h (.miss l)
-  | call {f : Fid} {xs e τ P} {ts : List Term} {h h' : Heap} {ε : Exit} :
-      Λ.MapsTo f ⟨xs, e, τ, P⟩ → FrameStep Λ h (e.substs (xs.map Prod.fst) ts) h' ε →
+  | call {f : Fid} {xs e τ safe} {ts : List Term} {h h' : Heap} {ε : Exit} :
+      Λ.MapsTo f ⟨xs, e, τ, safe⟩ → FrameStep Λ h (e.substs (xs.map Prod.fst) ts) h' ε →
       FrameStep Λ h (.call f ts) h' ε
 
 @[inherit_doc] scoped notation:50 Λ:51 " ⊢ " "⟨" h " | " e "⟩" " ⇓ᵢ " "⟨" h' " | " ε "⟩" =>

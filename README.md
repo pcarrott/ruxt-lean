@@ -30,7 +30,7 @@ The module layout mirrors the Rocq development one-to-one:
 | `lang/assertion.v` | `Lang/Assertion.lean` | Logical assertions on heaps (`Asrt`, `hprop`). |
 | `model/logic.v` | `Model/Logic.lean` | Template for a sound under-approximate program logic. |
 | `model/risl.v` | `Model/RISL.lean` | RISL proof rules, instantiation as UX logic. |
-| `model/typechecker.v` | `Model/TypeChecker.lean` | Function type signatures and safe programs. |
+| `model/typechecker.v` | `Model/Typechecker.lean` | Function type signatures and safe programs. |
 | `model/summary.v` | `Model/Summary.lean` | Summary contexts and properties. |
 | `model/refute.v` | `Model/Refute.lean` | The refutation algorithm and the inadequacy theorem. |
 | `types/type.v` | `Types/Ty.lean` | Generic type definition, assertions for type ownership. |

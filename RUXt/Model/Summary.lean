@@ -1,4 +1,3 @@
-import RUXt.Lang.TypeChecker
 import RUXt.Model.Logic
 
 namespace RUXt
@@ -75,7 +74,7 @@ theorem validPicks_cons {S : SummCtx} {τ : Ty} {ς : Summary} {ςs : SummPicks}
 /-! ### Type spaces for base types -/
 
 /-- Constructs a summary given a base type. -/
-def baseSummary : BaseType → Summary
+def baseSummary : BaseTy → Summary
   | .int => ⟨[tele (_ : ℤ)], fun r z => ⌞ r = .int z ⌟, fun z => Expr.int z⟩
   | .bool => ⟨[tele (_ : Bool)], fun r b => ⌞ r = .bool b ⌟, fun b => Expr.bool b⟩
   | .loc => ⟨[tele (_ : Loc)], fun r l => ⌞ r = .loc l ⌟, fun l => Expr.loc l⟩
@@ -85,7 +84,7 @@ def baseSummary : BaseType → Summary
 def baseSummCtx : SummCtx :=
   [.int, .bool, .loc, .unit].foldr (fun kind S => S.update (.base kind) (baseSummary kind)) ∅
 
-theorem baseSummCtx_base {kind : BaseType} {ς : Summary}
+theorem baseSummCtx_base {kind : BaseTy} {ς : Summary}
     (hval : baseSummCtx.Mem (.base kind) ς) : ς = baseSummary kind := by
   simp [SummCtx.Mem, baseSummCtx, SummCtx.update] at hval
   cases kind
@@ -110,8 +109,8 @@ theorem baseSummCtx_base {kind : BaseType} {ς : Summary}
       · intro h; cases h
     · intro h; cases h
 
-theorem baseSummCtx_custom {n : String} {ς : Summary}
-    (hval : baseSummCtx.Mem (.custom n) ς) : False := by
+theorem baseSummCtx_custom {τ : Ty} {n : String} {ς : Summary}
+    (hval : baseSummCtx.Mem (.custom τ n) ς) : False := by
   contradiction
 
 theorem baseSummary_valid Λ kind :

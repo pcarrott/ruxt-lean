@@ -8,7 +8,7 @@ namespace RUXt
 def DerivablePost (Λ : Library) (ςs : SummPicks) (f : Fid) (xs : List PVar)
     (τ : Ty) (ε : LExit) (Φ : Val → Tele.triple ςs -t> Asrt) : Prop :=
       -- Some function `f` outputs values of type `τ`
-      ∃ params body hdup, Λ.MapsTo f ⟨params, body, τ, hdup⟩ ∧
+      ∃ params body, Λ.MapsTo f ⟨params, body, τ, true⟩ ∧
       -- The concrete input types must match the types in `ςs`
       xs = params.map Prod.fst ∧ ςs.map Prod.fst = params.map Prod.snd ∧
       -- `[ε : Φ]` is obtained from executing `f` after composing the summaries in `ςs`
@@ -46,9 +46,9 @@ theorem derivable_for_main {Λ : Library} {S : SummCtx} {ςs : SummPicks} {f : F
     (hsumm : ValidSummCtx Λ S) (hsub : S [⊐] ςs)
     (hpost : DerivablePost Λ ςs f xs τ ε Q) :
     ReachableFromMain Λ τ (witness f xs ςs) ε Q := by
-  obtain ⟨params, _, hdup, himpl, rfl, htypes, L, hspec⟩ := hpost
+  obtain ⟨params, _, himpl, rfl, htypes, L, hspec⟩ := hpost
   refine ⟨fun _ => witness_safeMain hsumm hsub himpl htypes, ?_⟩
-  refine witness_triple hsumm hsub hdup ?_ ⟨L, hspec⟩
+  refine witness_triple hsumm hsub (Λ.params_nodup himpl) ?_ ⟨L, hspec⟩
   simpa using congrArg List.length htypes.symm
 
 /-- Soundness of well-formed type summary contexts. -/
@@ -85,16 +85,14 @@ theorem inadequacy {Λ : Library} {e : Expr}
   obtain ⟨ςs, hsub, f, xs, τ, εₗ, Φ, hpost, r, args, ⟨h', hΦ⟩, ⟨Hnok, rfl⟩⟩ := hrefute
   obtain ⟨hsafe, hux⟩ := derivable_for_main hctx hsub hpost
   refine ⟨h', ?_, τ, hsafe args⟩
-  obtain ⟨_, _, _, _, _, _, L, hspec⟩ := hpost
+  obtain ⟨_, _, _, _, _, L, hspec⟩ := hpost
   obtain ⟨_, _, ε, ⟨hε, _⟩⟩ := L.ux_frame_soundness hspec _ _ _ hΦ
   obtain ⟨h, hP, hstep⟩ := ux_frame_triple_spec hux _ _ _ hΦ _ hε
   rw [teleBind_apply] at hP; rw [hP] at *
   rcases εₗ; contradiction
-  · let .unit := r
-    injection hε with hε; subst hε
+  · let .unit := r; cases hε
     exact hstep
-  · let .loc _ := r
-    injection hε with hε; subst hε
+  · let .loc _ := r; cases hε
     exact hstep
 
 end RUXt

@@ -20,33 +20,35 @@ private theorem mergeSrcs_safeProgram {Λ : Library} {ςs : SummPicks}
     {𝕍 : VarCtx} {call : Expr} {τ : Ty} {args : TeleArg (Tele.triple ςs)}
     {xs : List PVar} (Hlen : ςs.length = xs.length)
     (hsafe : ∀ τ ς, (τ, ς) ∈ ςs → ∀ args, SafeMain Λ (ς.src.apply args) τ)
-    (hcall : SafeProgram (𝕍.consFrom xs (ςs.map Prod.fst)) Λ call τ) :
+    (hcall : SafeProgram (𝕍.extend xs (ςs.map Prod.fst)) Λ call τ) :
     SafeProgram 𝕍 Λ ((mergeSrcs xs ςs call).apply args) τ := by
   revert xs 𝕍
   induction' ςs with ς ςs ih
   · intro 𝕍 xs hlen hcall
     obtain rfl := by simpa using hlen.symm
+    rw [List.map_nil, VarCtx.extend_nil] at hcall
     exact hcall
   · intro 𝕍 xs hlen hcall
     rcases xs with _ | ⟨x, xs⟩; contradiction
     rcases args with ⟨v, rest⟩
     rw [mergeSrcs_cons]; simp [SafeProgram]
-    refine ⟨ς.1, hsafe _ _ (by simp) _, ?_⟩
+    refine ⟨ς.1, safeProgram_subset (hsafe _ _ (by simp) _) (PFun.empty_subset _), ?_⟩
+    rw [List.map_cons, VarCtx.extend_cons] at hcall
     exact ih (by simp_all) (by simpa using hlen) hcall
 
 /-- Witness programs are safe main programs. -/
 theorem witness_safeMain {Λ : Library} {S : SummCtx} {ςs : SummPicks}
     {args : TeleArg (Tele.triple ςs)} {f : Fid} {params : List (PVar × Ty)}
-    {body : Expr} {τ : Ty} {hdup : (params.map Prod.fst).Nodup}
+    {body : Expr} {τ : Ty} {safe : Bool}
     (hsumm : ValidSummCtx Λ S) (hsub : S [⊐] ςs)
-    (himpl : Λ.MapsTo f ⟨params, body, τ, hdup⟩)
+    (himpl : Λ.MapsTo f ⟨params, body, τ, safe⟩)
     (htypes : ςs.map Prod.fst = params.map Prod.snd) :
     SafeMain Λ ((witness f (params.map Prod.fst) ςs).apply args) τ := by
   have hlen : ςs.length = (params.map Prod.fst).length := by
     simpa using congrArg List.length htypes
   obtain hsafe := fun τ ς h => (hsumm τ ς (hsub τ ς h)).1.1
   refine mergeSrcs_safeProgram hlen hsafe ?_
-  rw [htypes, consVarCtx_eq_rev hdup]
+  rw [htypes, VarCtx.extend_empty (Λ.params_nodup himpl)]
   exact safe_call himpl
 
 /-! ### Semantics of witnesses -/
@@ -94,8 +96,7 @@ private theorem witness_frame_step {Λ : Library} {ςs : SummPicks}
     obtain ⟨hdisjF1, hdisjF2⟩ := PFun.disjoint_union_r.1 hdisjF
     rw [← PFun.union_assoc, mergeVals_cons] at hstep
     obtain ⟨_, hux⟩ := hreach ς.1 ς.2 (by simp)
-    obtain ⟨h, hemp, εₛ, hε, hstep1⟩ := hux rest.fst v h1 hpre1
-    injection hε with hε; subst hε
+    obtain ⟨h, hemp, εₛ, ⟨⟩, hstep1⟩ := hux rest.fst v h1 hpre1
     simp [teleBind_apply] at hemp; subst hemp
     rcases frame_addition hstep1 hF hdisjF1.symm with ⟨hstep1, _⟩ | ⟨l, Heq, _⟩
     · simp_all; refine FrameStep.letIn hstep1 ?_
