@@ -3,9 +3,8 @@ import Mathlib.Data.PFun
 namespace RUXt
 
 /-- Partial maps from `α` to `β`, realised as an extension of Mathlib's partial
-functions `PFun` (`α →. β`). The extra structure (`∅`, `∪`, `insert`,
-`singleton`, `dom`, disjointness and inclusion) is what is needed to model
-heaps in the rest of the development. -/
+functions `PFun` (`α →. β`), with `∅`, `∪`, `insert`, `singleton`, `dom`,
+disjointness and inclusion. -/
 def PFun (α : Type*) (β : Type*) := α →. β
 
 namespace PFun
@@ -43,6 +42,8 @@ protected def Disjoint (m₁ m₂ : PFun α β) : Prop :=
 instance : HasSubset (PFun α β) :=
   ⟨fun m₁ m₂ => ∀ a b, m₁ a = Part.some b → m₂ a = Part.some b⟩
 
+/-! ## Properties -/
+
 /-! ### Pointwise characterisations -/
 
 @[ext] theorem ext {m₁ m₂ : PFun α β} (h : ∀ a, m₁ a = m₂ a) : m₁ = m₂ := funext h
@@ -59,7 +60,7 @@ theorem union_apply (m₁ m₂ : PFun α β) (a : α) :
   simp only [dom, Set.mem_setOf_eq, Part.dom_iff_mem]
   exact ⟨fun ⟨b, hb⟩ => ⟨b, Part.eq_some_iff.2 hb⟩, fun ⟨b, hb⟩ => ⟨b, Part.eq_some_iff.1 hb⟩⟩
 
-@[simp] theorem not_mem_dom {m : PFun α β} {a : α} : a ∉ dom m ↔ m a = Part.none := by
+@[simp] theorem notMem_dom {m : PFun α β} {a : α} : a ∉ dom m ↔ m a = Part.none := by
   simp only [dom, Set.mem_setOf_eq, Part.eq_none_iff']
 
 theorem union_apply_eq_some {m₁ m₂ : PFun α β} {a : α} {b : β} :
@@ -71,7 +72,7 @@ theorem union_apply_eq_some {m₁ m₂ : PFun α β} {a : α} {b : β} :
   · have hnone : m₁ a = Part.none := Part.eq_none_iff'.2 h
     simp [hnone]
 
-theorem union_apply_some_l {m₁ m₂ : PFun α β} {a : α} {b : β} (h : m₁ a = Part.some b) :
+theorem union_apply_some_left {m₁ m₂ : PFun α β} {a : α} {b : β} (h : m₁ a = Part.some b) :
     (m₁ ∪ m₂) a = Part.some b := union_apply_eq_some.2 (Or.inl h)
 
 theorem insert_apply_ne [DecidableEq α] {a a' : α} (b : β) (m : PFun α β) (h : a' ≠ a) :
@@ -86,16 +87,16 @@ theorem insert_insert_self {α β : Type*} [DecidableEq α] (a : α) (b c : β) 
 
 theorem Disjoint.symm {m₁ m₂ : PFun α β} (h : m₁ ##ₘ m₂) : m₂ ##ₘ m₁ := fun a => (h a).symm
 
-theorem Disjoint.some_l {m₁ m₂ : PFun α β} {a : α} {b : β}
+theorem Disjoint.eq_none_of_left_eq_some {m₁ m₂ : PFun α β} {a : α} {b : β}
     (h : m₁ ##ₘ m₂) (ha : m₁ a = Part.some b) : m₂ a = Part.none := by
   rcases h a with h' | h'
   · rw [h'] at ha; exact absurd ha (by simp)
   · exact h'
 
-@[simp] theorem disjoint_empty_l (m : PFun α β) : (∅ : PFun α β) ##ₘ m := fun _ => Or.inl rfl
-@[simp] theorem disjoint_empty_r (m : PFun α β) : m ##ₘ (∅ : PFun α β) := fun _ => Or.inr rfl
+@[simp] theorem disjoint_empty_left (m : PFun α β) : (∅ : PFun α β) ##ₘ m := fun _ => Or.inl rfl
+@[simp] theorem disjoint_empty_right (m : PFun α β) : m ##ₘ (∅ : PFun α β) := fun _ => Or.inr rfl
 
-@[simp] theorem disjoint_insert_l [DecidableEq α] {m₁ m₂ : PFun α β} {a : α} {b : β} :
+@[simp] theorem disjoint_insert_left [DecidableEq α] {m₁ m₂ : PFun α β} {a : α} {b : β} :
     insert a b m₁ ##ₘ m₂ ↔ m₂ a = Part.none ∧ m₁ ##ₘ m₂ := by
   constructor
   · intro h
@@ -115,7 +116,7 @@ theorem Disjoint.some_l {m₁ m₂ : PFun α β} {a : α} {b : β}
       · left; rwa [insert_apply_ne _ _ ha']
       · right; exact h'
 
-@[simp] theorem disjoint_union_l {m₁ m₂ m₃ : PFun α β} :
+@[simp] theorem disjoint_union_left {m₁ m₂ m₃ : PFun α β} :
     m₁ ∪ m₂ ##ₘ m₃ ↔ (m₁ ##ₘ m₃) ∧ (m₂ ##ₘ m₃) := by
   constructor
   · intro h
@@ -139,7 +140,7 @@ theorem Disjoint.some_l {m₁ m₂ : PFun α β} {a : α} {b : β}
       · right; exact h''
     · right; exact h'
 
-@[simp] theorem disjoint_union_r {m₁ m₂ m₃ : PFun α β} :
+@[simp] theorem disjoint_union_right {m₁ m₂ m₃ : PFun α β} :
     m₁ ##ₘ m₂ ∪ m₃ ↔ (m₁ ##ₘ m₂) ∧ (m₁ ##ₘ m₃) := by
   constructor
   · intro h
@@ -165,8 +166,8 @@ theorem Disjoint.some_l {m₁ m₂ : PFun α β} {a : α} {b : β}
 
 theorem disjoint_some_insert [DecidableEq α] {m₁ m₂ : PFun α β} {a : α} {x : β} (y : β)
     (h : m₁ a = Part.some x) (hdisj : m₁ ##ₘ m₂) : insert a y m₁ ##ₘ m₂ := by
-  rw [disjoint_insert_l]
-  exact ⟨hdisj.some_l h, hdisj⟩
+  rw [disjoint_insert_left]
+  exact ⟨hdisj.eq_none_of_left_eq_some h, hdisj⟩
 
 /-! ### Union -/
 
@@ -195,9 +196,9 @@ theorem union_comm {m₁ m₂ : PFun α β} (h : m₁ ##ₘ m₂) : m₁ ∪ m�
     · rw [if_pos hd1]
     · rw [if_neg hd1, h', Part.eq_none_iff'.2 hd1]
 
-theorem union_id_l (m : PFun α β) : m = ∅ ∪ m := by simp
+theorem eq_empty_union (m : PFun α β) : m = ∅ ∪ m := by simp
 
-theorem insert_union_l [DecidableEq α] (a : α) (b : β) (m₁ m₂ : PFun α β) :
+theorem insert_union [DecidableEq α] (a : α) (b : β) (m₁ m₂ : PFun α β) :
     insert a b m₁ ∪ m₂ = insert a b (m₁ ∪ m₂) := by
   ext a'; simp only [union_apply, insert_apply]
   by_cases h : a' = a <;> simp [h]
@@ -242,11 +243,6 @@ theorem insert_mono [DecidableEq α] {m₁ m₂ : PFun α β} (a : α) (b : β) 
   by_cases ha' : a' = a
   · simpa [ha'] using hb'
   · simp only [ha', if_false] at hb' ⊢; exact h a' b' hb'
-
-theorem insert_comm [DecidableEq α] {a a' : α} (h : a ≠ a') (b b' : β) (m : PFun α β) :
-    insert a b (insert a' b' m) = insert a' b' (insert a b m) := by
-  ext a''; simp only [insert_apply]
-  by_cases h1 : a'' = a <;> by_cases h2 : a'' = a' <;> simp_all
 
 end PFun
 

@@ -2,7 +2,7 @@
 Port of `theories/types/type.v`: generic type definition, assertions for type
 ownership.
 -/
-import RUXt.Lang.Lang
+import RUXt.Lang.Expr
 import RUXt.Lang.Assertion
 
 namespace RUXt

@@ -1,98 +1,80 @@
+import RUXt.Model.Summary.Derive
+import RUXt.Model.Summary.Specialise
 import RUXt.Model.Witness
+
+/-!
+# The refutation algorithm
+
+The refutation procedure `Library.TryRefute`, the specialisation rule `SummCtx.TrySpecialise`
+and the meta-loop `WfSummCtx` combining them into well-formed type spaces.  The algorithm is
+parametric on the program logic `L` its calls are derived in and on the solver `Θ` answering
+its satisfiability and simplification queries.
+-/
 
 namespace RUXt
 
-/-! ### The type refutation algorithm -/
-
-/-- Well-typed states that can be derived by some UX logic. -/
-def DerivablePost (Λ : Library) (ςs : SummPicks) (f : Fid) (xs : List PVar)
-    (τ : Ty) (ε : LExit) (Φ : Val → Tele.triple ςs -t> Asrt) : Prop :=
-      -- Some function `f` outputs values of type `τ`
-      ∃ params body, Λ.MapsTo f ⟨params, body, τ, true⟩ ∧
-      -- The concrete input types must match the types in `ςs`
-      xs = params.map Prod.fst ∧ ςs.map Prod.fst = params.map Prod.snd ∧
-      -- `[ε : Φ]` is obtained from executing `f` after composing the summaries in `ςs`
-      DerivableCall Λ f ςs ε Φ
-
-/-- The refutation procedure. -/
-def TryRefute (Λ : Library) (S : SummCtx) (r : SummCtx ⊕ Expr) : Prop :=
-  -- Pick a subset ςs of Σ, for input summaries
-  ∃ ςs, S [⊐] ςs ∧
-  -- Construct [e : τ] that terminates with postcondition [ε : Φ]
-  ∃ f xs τ ε Φ, DerivablePost Λ ςs f xs τ ε Φ ∧
-  -- The postcondition is satisfiable
-  ∃ v args, Sat ((Φ v).apply args) ∧
+/-- The refutation procedure, in the program logic `L`, with the checks on assertions
+answered by the solver `Θ`.  It derives a summary of a call to a function producing `τ` on
+summaries of the type space `S`; in the ok case the result is that summary, and in the error
+case it is a witness program of type unsoundness. -/
+def Library.TryRefute (Λ : Library) (L : Logic.{0}) (Θ : Solver) (S : SummCtx)
+    (τ : TyConsId) (r : Summary ⊕ Expr) : Prop :=
+  -- Pick `safe` function `f` that outputs values of type constructor `τ`
+  ∃ f φ, Λ.MapsTo f φ ∧ φ.template.ty = τ ∧ φ.template.safe ∧
+  -- Pick input summaries `ςs` from `S` fitting the parameters of `f`
+  ∃ ςs, φ.SafePicks S ςs ∧
+  -- Postcondition `[ε : Ψ]` is obtained from executing `f` on inputs `ςs`
+  ∃ ε Ψ, ςs.DerivableCall L Λ f ε Ψ ∧
+  -- Construct subvariant `Φ` from postcondition `Ψ`
+  ∃ Φ, Ψ.SimplifiesTo Θ Φ ∧
+  -- Check that the subvariant `Φ` is satisfiable
+  Θ.Sat (Subvariant.symAsrt Φ) ∧
+  -- Construct the source `src` of the new summary
+  let src := φ.callSource f ςs
   -- Case analysis on whether the derived state is Ok
   match r with
-  | .inl S' => ε = .lok ∧ -- Case Ok: The summary context Σ is updated to Σ'
-        S' = SummCtx.update S τ ⟨Tele.triple ςs, Φ, witness f xs ςs⟩
-  -- Found witness `e` for type unsoundness
-  | .inr e => ε ≠ .lok ∧ --Cases Err/Miss: Found witness e for type unsoundness
-      e = (witness f xs ςs).apply args
+  -- Case Ok: The result is the new summary, with postcondition `Φ` and source `src`
+  | .inl ς => ε = .lok ∧ ς = ⟨Φ, src.fn⟩
+  -- Cases Err/Miss: Found the source for type unsoundness
+  | .inr e => ε ≠ .lok ∧
+      -- For each type parameter of the source, pick a type and summary from `S`
+      ∃ P, P.Safe S src ∧
+      -- Extract a model `args` of the subvariant `Φ` after concretising the types with `P`
+      ∃ args, Θ.Model (Subvariant.typedSymAsrt Φ P) args ∧
+      -- Construct the witness `e` from the source, the picked types and the model
+      e = src.witness P args.ulower
 
-/-- Meta-loop for deriving well-formed contexts. -/
-inductive WfSummCtx (Λ : Library) : SummCtx → Prop
+/-- The specialisation rule: the summary `ς`, filed for `τ`, is obtained by pinning a type
+parameter `i` of a summary `ς₀` of the type space `S` to a type constructor `τ'`, described by
+summaries of `S` filed for `τ'`, one per parameter of the source of `ς₀` carrying `i`. -/
+def SummCtx.TrySpecialise (S : SummCtx) (Θ : Solver)
+    (τ : TyConsId) (ς : Summary) : Prop :=
+  -- Pick a summary `ς₀` of the type space
+  ∃ ς₀, S.Mem ς₀ ∧
+  -- Pick a type parameter `i` of the source of `ς₀`
+  ∃ i, i < ς₀.src.arity ∧
+  -- Pick a type constructor `τ'` to pin `i` to, together with summaries `ςs` filed for it
+  ∃ τ' ςs, (∀ ς ∈ ςs, S.MemTy τ' ς) ∧
+  -- Supply one summary per parameter of the source of `ς₀` carrying `i`
+  ςs.length = ς₀.src.paramCount i ∧
+  -- Specialise `ς₀` to `ς`, pinning `i` to the anonymous form of `τ'`
+  ς = ς₀.specialise i τ'.anon ςs ∧
+  -- The specialised summary is filed for the (anonymised) output type of its source
+  τ = ς.fn.ty ∧
+  -- Check that the specialised postcondition is still satisfiable
+  Θ.Sat ς.owned.symAsrt
+
+/-- Meta-loop for inferring valid summaries to derive well-formed contexts, the derivation
+steps being taken in the program logic `L` and the checks on assertions answered by the
+solver `Θ`. -/
+inductive WfSummCtx (L : Logic.{0}) (Θ : Solver) (Λ : Library) : SummCtx → Prop
   | nil :
-      WfSummCtx Λ baseSummCtx
-  | cons {S S' : SummCtx} :
-      WfSummCtx Λ S → TryRefute Λ S (.inl S') →
-      WfSummCtx Λ S'
-
-/-! ### Inference soundness -/
-
-/-- Any derivable state can be witnessed by a main program. -/
-theorem derivable_for_main {Λ : Library} {S : SummCtx} {ςs : SummPicks} {f : Fid}
-    {xs : List PVar} {τ : Ty} {ε : LExit} {Q : Val → Tele.triple ςs -t> Asrt}
-    (hsumm : ValidSummCtx Λ S) (hsub : S [⊐] ςs)
-    (hpost : DerivablePost Λ ςs f xs τ ε Q) :
-    ReachableFromMain Λ τ (witness f xs ςs) ε Q := by
-  obtain ⟨params, _, himpl, rfl, htypes, L, hspec⟩ := hpost
-  refine ⟨fun _ => witness_safeMain hsumm hsub himpl htypes, ?_⟩
-  refine witness_triple hsumm hsub (Λ.params_nodup himpl) ?_ ⟨L, hspec⟩
-  simpa using congrArg List.length htypes.symm
-
-/-- Soundness of well-formed type summary contexts. -/
-theorem summCtx_soundness {Λ : Library} {S : SummCtx}
-    (hsumm : WfSummCtx Λ S) : ValidSummCtx Λ S := by
-  induction hsumm with
-  | nil =>
-    intro τ ς hin
-    rcases τ with ⟨kind⟩
-    · rw [baseSummCtx_base hin]
-      exact baseSummary_valid Λ kind
-    · contradiction
-  | cons _ hrefute ih =>
-    intro τ' ς' hin
-    obtain ⟨ςs, hsub, f, xs, τ, ε, Φ, hpost, v, args, hsat, ⟨rfl, rfl⟩⟩ := hrefute
-    rcases SummCtx.mem_update hin with ⟨rfl, rfl⟩ | hin
-    · exact ⟨derivable_for_main ih hsub hpost, v, args, hsat⟩
-    · exact ih τ' ς' hin
-
-/-! ### Soundness result of RUXt -/
-
-/-- A type assignment in the library can be refuted. -/
-def HasRefutedType (Λ : Library) (e : Expr) : Prop :=
-  ∃ S, WfSummCtx Λ S ∧ TryRefute Λ S (.inr e)
-/-- A main program exhibits undefined behaviour. -/
-def Inadequate (Λ : Library) (e : Expr) : Prop :=
-  ∃ h, (Λ ⊢ ⟨∅ | e⟩ ⇓ ⟨h | .err⟩) ∧ ∃ τ, SafeMain Λ e τ
-
-/-- Adequacy result for refuted type assignments. -/
-theorem inadequacy {Λ : Library} {e : Expr}
-    (hrefuted : HasRefutedType Λ e) : Inadequate Λ e := by
-  obtain ⟨S, hctx, hrefute⟩ := hrefuted
-  obtain hctx := summCtx_soundness hctx
-  obtain ⟨ςs, hsub, f, xs, τ, εₗ, Φ, hpost, r, args, ⟨h', hΦ⟩, ⟨Hnok, rfl⟩⟩ := hrefute
-  obtain ⟨hsafe, hux⟩ := derivable_for_main hctx hsub hpost
-  refine ⟨h', ?_, τ, hsafe args⟩
-  obtain ⟨_, _, _, _, _, L, hspec⟩ := hpost
-  obtain ⟨_, _, ε, ⟨hε, _⟩⟩ := L.ux_frame_soundness hspec _ _ _ hΦ
-  obtain ⟨h, hP, hstep⟩ := ux_frame_triple_spec hux _ _ _ hΦ _ hε
-  rw [teleBind_apply] at hP; rw [hP] at *
-  rcases εₗ; contradiction
-  · let .unit := r; cases hε
-    exact hstep
-  · let .loc _ := r; cases hε
-    exact hstep
+      WfSummCtx L Θ Λ (.base Λ)
+  | cons {S : SummCtx} {τ : TyConsId} {ς : Summary} :
+      WfSummCtx L Θ Λ S → Λ.TryRefute L Θ S τ (.inl ς) →
+      WfSummCtx L Θ Λ (S.update τ ς)
+  | specialise {S : SummCtx} {τ : TyConsId} {ς : Summary} :
+      WfSummCtx L Θ Λ S → S.TrySpecialise Θ τ ς →
+      WfSummCtx L Θ Λ (S.update τ ς)
 
 end RUXt

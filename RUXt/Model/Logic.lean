@@ -1,101 +1,238 @@
+import RUXt.Lang.Typechecker
+import RUXt.Lang.Semantics
 import RUXt.Lib.Telescopes
-import RUXt.Model.Assertion
+
+/-!
+# Assertions, symbolic triples, logics and solvers
+
+The syntactic objects the refutation algorithm manipulates:
+
+* the assertion language `Asrt` and its notations;
+* symbolic assertions `SymAsrt`, symbolic programs `SymExpr` and symbolic triples `SymTriple`,
+  all functions of the symbolic values bound by a telescope;
+* typed subvariants (`TypedSubvariants`) and the triples parametric on them, whose assertions
+  `PolyAsrt` and programs `PolyExpr` are symbolic ones over a telescope binding the typed
+  subvariants after the symbolic values;
+* program logics deriving triples (`Logic`) and solvers answering satisfiability and
+  simplification queries (`Solver`).
+
+Assertions are purely syntactic here: no definition of this file refers to their meaning.
+-/
 
 namespace RUXt
 
-/-! ### Symbolic triples -/
+open scoped PFun
+
+universe u
+
+/-! ## Assertions -/
+
+/-! ### Assertion language -/
+
+/-- Assertions. Lives in `Type (u + 1)` because existentials
+quantify over arbitrary smaller types in `Type u`. -/
+inductive Asrt
+  | pure (P : Prop)
+  | true
+  | false
+  | and (a₁ a₂ : Asrt)
+  | or (a₁ a₂ : Asrt)
+  | implies (a₁ a₂ : Asrt)
+  | ex {X : Type _} (P : X → Asrt)
+  | emp
+  | single (l : Loc) (bv : BlockValue)
+  | star (a₁ a₂ : Asrt)
+  | opaque (Λ : Library) (τ : Ty) (v : Val)
+
+/-- `⌞ P ⌟`: a pure assertion over the empty heap. -/
+scoped notation "⌞" P "⌟" => Asrt.pure P
+/-- `⌜ P ⌝`: `P` weakened to an affine assertion, `P ∗ TRUE`. -/
+scoped notation "⌜" P "⌝" => Asrt.star P Asrt.true
+
+/-- `l ↦ v`: the heap is a single one-cell block at `l` containing `v`. -/
+def Asrt.pointsTo (l : Loc) (v : Val) : Asrt :=
+  .single l (.block 1 (PFun.singleton l.2 (.val v)))
+@[inherit_doc] scoped infix:67 " ↦ " => Asrt.pointsTo
+/-- `l ↦∅`: the heap is a single freed block at `l`. -/
+def Asrt.pointsToFreed (l : Loc) : Asrt :=
+  .single l .freed
+@[inherit_doc] scoped postfix:67 " ↦∅" => Asrt.pointsToFreed
+/-- `l ↦?`: the heap is a single uninitialised one-cell block at `l`. -/
+def Asrt.pointsToUninit (l : Loc) : Asrt :=
+  .single l (.block 1 (PFun.singleton l.2 .poison))
+@[inherit_doc] scoped postfix:67 " ↦?" => Asrt.pointsToUninit
+
+/-- `P ∧ₕ Q`: conjunction of assertions. -/
+scoped infixr:62 " ∧ₕ " => Asrt.and
+/-- `P ∨ₕ Q`: disjunction of assertions. -/
+scoped infixr:61 " ∨ₕ " => Asrt.or
+/-- `P →ₕ Q`: implication of assertions. -/
+scoped infixr:60 " →ₕ " => Asrt.implies
+/-- `P ∗ Q`: separating conjunction. -/
+scoped infixr:63 " ∗ " => Asrt.star
+
+/-- Iterated separating conjunction over a list, with access to the position of each
+element. -/
+def Asrt.iterI {X : Type _} (xs : List X) (P : ℕ → X → Asrt) : Asrt :=
+  match xs with
+  | [] => .emp
+  | x :: xs => P 0 x ∗ Asrt.iterI xs (fun n => P (n + 1))
+/-- `[∗ xs , P]`: iterated separating conjunction over a list. -/
+def Asrt.iter {X : Type _} (xs : List X) (P : X → Asrt) : Asrt :=
+  Asrt.iterI xs fun _ => P
+
+/-- `l ↦∗ vs`: `vs` stored contiguously starting at `l`. -/
+def Asrt.pointsToMany (l : Loc) (vs : List Val) : Asrt :=
+  .iterI vs fun i v => (l +ₗ i) ↦ v
+/-- An optionally initialised cell. -/
+def optInit (l : Loc) (v : Option Val) : Asrt :=
+  match v with
+  | some v => l ↦ v
+  | none => Asrt.pointsToUninit l
+/-- `l ↦∗? vs`: optionally initialised cells stored contiguously at `l`. -/
+def Asrt.pointsToManyOpt (l : Loc) (vs : List (Option Val)) : Asrt :=
+  .iterI vs fun i v => optInit (l +ₗ i) v
+
+/-! ## Symbolic triples
+
+A symbolic triple over a telescope `tt` is a triple whose components are functions of the
+symbolic values `tt` binds.  The telescope lives one universe above the assertions,
+`tt : Tele.{u + 1}` for assertions `Asrt.{u}`, so that it may bind typed subvariants, which
+store assertions.  Small types such as `Expr` are lifted into that universe (`LExpr`,
+`symTele`). -/
+
+/-- Expressions, lifted into the universe of the telescopes of the logic. -/
+abbrev LExpr : Type u := Lifted.{u} Expr
+/-- Symbolic assertions over the telescope `tt`: telescopic functions of its symbolic values
+into assertions. -/
+abbrev SymAsrt (tt : Tele.{u + 1}) : Type (u + 1) := tt -t> Asrt.{u}
+/-- Symbolic expressions over the telescope `tt`: telescopic functions of its symbolic values
+into (lifted) expressions. -/
+abbrev SymExpr (tt : Tele.{u + 1}) : Type (u + 1) := tt -t> LExpr.{u + 1}
+
+/-- The telescope of the logic binding the symbolic values of a small telescope `tt`. -/
+abbrev symTele (tt : Tele.{u}) : Tele.{u + 1} := Tele.ulift.{u, u + 1} tt
+
+/-- The symbolic assertion over the symbolic values of a small telescope given by an ordinary
+function of those values. -/
+def symAsrt {tt : Tele.{u}} (F : TeleArg tt → Asrt.{u}) : SymAsrt (symTele tt) :=
+  teleBind fun args => F args.ulower
 
 /-- Termination tags at the logic level. -/
 inductive LExit
   | lok : LExit
   | lerr : LExit
   | lmiss : LExit
-/-- Symbolic triples. -/
-def SymTriple (tt : Tele) : Type 1 :=
-  (tt -t> Asrt) × (tt -t> Expr) × LExit × (Val → tt -t> Asrt)
-/-- The exit tag of a function specification. -/
-def SymTriple.exit {tt : Tele} : SymTriple tt → LExit
-  | ⟨_, _, ε, _⟩ => ε
+/-- Symbolic triples: a precondition, a program, an exit tag and a postcondition on the
+result value, all over the same telescope of symbolic values. -/
+def SymTriple (tt : Tele.{u + 1}) : Type (u + 1) :=
+  SymAsrt tt × SymExpr tt × LExit × (Val → SymAsrt tt)
 
-/-- Converts a logical tag to a semantic one, given a value.
-If the value does not match the expected tag, returns `none`. -/
-def LExit.toExit : LExit → Val → Option Exit
-  | .lok, v => some (.ok v)
-  | .lerr, .unit => some .err
-  | .lmiss, .loc l => some (.miss l)
-  | _, _ => none
+/-! ## Typed subvariants -/
 
-/-! ### UX semantics -/
+/-- A type argument together with the subvariants of its inhabitants: assertions on a value,
+read positionally, the `k`-th one describing the value at the `k`-th parameter carrying the
+type parameter it is supplied for. -/
+structure TypedSubvariants : Type (u + 1) where
+  /-- The type itself. -/
+  ty : Ty
+  /-- The subvariants, in order. -/
+  own : List (Val → Asrt.{u})
 
-/-- Under-approximate semantic triples for a given big-step relation. -/
-def UXTriple {tt : Tele} (step : Library → Heap → Expr → Heap → Exit → Prop)
-    : Library → SymTriple tt → Prop
-  | Λ, ⟨P, e, εₗ, Φ⟩  =>
-    ∀ args v h', HProp h' ((Φ v).apply args) → ∃ h, HProp h (P.apply args) ∧
-    ∃ εₛ, εₗ.toExit v = some εₛ ∧ step Λ h (e.apply args) h' εₛ
-/-- Under-approximate semantic triples for the instrumented semantics. -/
-def UXFrameTriple {tt : Tele} : Library → SymTriple tt → Prop := UXTriple FrameStep
-/-- Under-approximate semantic triples for the full semantics. -/
-def UXFullTriple {tt : Tele} : Library → SymTriple tt → Prop := UXTriple BigStep
+/-- The telescope binding `n` typed subvariants. -/
+def subvArgTele (n : ℕ) : Tele.{u + 1} := .uniform TypedSubvariants.{u} n
 
-/-- Maps a triple with a `miss` exit to one with an `err` exit. -/
-def mapMissToErr {tt : Tele} : SymTriple tt → SymTriple tt
-  | ⟨P, e, .lmiss, Φ⟩ => ⟨P, e, .lerr, fun v => teleBind (fun args =>
-      ⌞ v = .unit ⌟ ∗ Asrt.ex fun l => (Φ (.loc l)).apply args)⟩
-  | triple => triple
-/-- Preserved behaviour between the instrumented and the full triples. -/
-theorem ux_triple_preservation {tt : Tele} {Λ : Library} {triple : SymTriple tt}
-    (hux : UXFrameTriple Λ triple) : UXFullTriple Λ (mapMissToErr triple) := by
-  intro args v h' hΦ
-  obtain ⟨P, e, εₗ, Φ⟩ := triple
-  cases εₗ <;> simp [*] at *
-  · obtain ⟨h, hP, ε, Hε, hstep⟩ := hux _ _ _ hΦ
-    obtain hstep := semantics_preservation hstep
-    cases Hε
-    exact ⟨h, hP, .ok v, rfl, hstep⟩
-  · obtain ⟨h, hP, ε, Hε, hstep⟩ := hux _ _ _ hΦ
-    obtain hstep := semantics_preservation hstep
-    let .unit := v
-    cases Hε
-    exact ⟨h, hP, .err, rfl, hstep⟩
-  · rw [teleBind_apply] at hΦ
-    obtain ⟨h1', h', rfl, hdisj, ⟨rfl, rfl⟩, hΦ⟩ := hΦ
-    rw [<- PFun.union_id_l]
-    obtain ⟨l, hΦ⟩ := hΦ
-    obtain ⟨h, hP, ε, Hε, hstep⟩ := hux _ _ _ hΦ
-    obtain hstep := semantics_preservation hstep
-    cases Hε
-    exact ⟨h, hP, .err, rfl, hstep⟩
+/-- The placeholder typed subvariant: the unit type, with no subvariant. -/
+instance : Inhabited TypedSubvariants.{u} := ⟨⟨Ty.unit, []⟩⟩
 
-theorem ux_frame_triple_spec {tt : Tele} {Λ : Library}
-    {P : tt -t> Asrt} {e : tt -t> Expr} {εₗ : LExit} {Φ : Val → tt -t> Asrt}
-    (hux : UXFrameTriple Λ ⟨P, e, εₗ, Φ⟩) :
-    ∀ args r h', HProp h' ((Φ r).apply args) → ∀ ε, εₗ.toExit r = some ε →
-    ∃ h, HProp h (P.apply args) ∧ Λ ⊢ ⟨ h | e.apply args ⟩ ⇓ ⟨ h' | ε.toFull ⟩ := by
-  intro args r h' hΦ ε hε
-  obtain hux := ux_triple_preservation hux
-  cases εₗ
-  · cases hε
-    obtain ⟨h, hP, ε, ⟨⟩, hstep⟩ := hux _ _ _ hΦ
-    exact ⟨h, hP, hstep⟩
-  · let .unit := r
-    cases hε
-    obtain ⟨h, hP, ε, ⟨⟩, hstep⟩ := hux _ _ _ hΦ
-    exact ⟨h, hP, hstep⟩
-  · let .loc ⟨b, i⟩ := r
-    cases hε
-    specialize hux args .unit h' ?_
-    · simp_all [teleBind_apply]
-      exact ⟨b, i, hΦ⟩
-    obtain ⟨h, hP, ε, ⟨⟩, hstep⟩ := hux
-    exact ⟨h, hP, hstep⟩
+/-- A tuple of `n` typed subvariants. -/
+abbrev SubvArgs (n : ℕ) : Type (u + 1) := TeleArg (subvArgTele.{u} n)
 
-/-! ### UX logics -/
+namespace TypedSubvariants
 
-/-- The refutation algorithm requires a logic that derives sound UX specifications. -/
-structure Logic : Type 1 where
-  DerivableSpec {tt : Tele} : Library → SymTriple tt → Prop
-  ux_frame_soundness {tt : Tele} {Λ : Library} {triple : SymTriple tt} :
-    DerivableSpec Λ triple → UXFrameTriple Λ triple
+/-- The assertion that `v` owns the resources of the `i`-th subvariant of `ts`; beyond the
+list of subvariants, the opaque predicate of the type. -/
+def get (ts : TypedSubvariants.{u}) (Λ : Library) (i : ℕ) (v : Val) : Asrt.{u} :=
+  match ts.own[i]? with
+  | some s => s v
+  | none => .opaque Λ ts.ty v
+
+/-- The typed subvariant of a bare type: the type with no subvariant, so that every position
+is read as the opaque predicate of the type. -/
+def ofTy (τ : Ty) : TypedSubvariants.{u} := ⟨τ, []⟩
+
+end TypedSubvariants
+
+namespace SubvArgs
+
+variable {n : ℕ}
+
+/-- The typed subvariant at position `i`, or the placeholder beyond the tuple. -/
+def get (S : SubvArgs.{u} n) (i : ℕ) : TypedSubvariants.{u} := S.toList.getD i default
+
+/-- The types of a tuple of typed subvariants. -/
+def tys (S : SubvArgs.{u} n) : TyArgs n := S.mapUniform TypedSubvariants.ty
+
+/-- The tuple of typed subvariants of a tuple of bare types (`TypedSubvariants.ofTy`). -/
+def ofTys (T : TyArgs n) : SubvArgs.{u} n := T.mapUniform TypedSubvariants.ofTy
+
+end SubvArgs
+
+/-! ## Triples parametric on typed subvariants
+
+A triple parametric on `n` typed subvariants over a small telescope `tt` is a symbolic triple
+over `polyTele n tt`, which binds the symbolic values of `tt` followed by `n` typed
+subvariants. -/
+
+/-- The symbolic values of `tt`, lifted into the universe of the logic, followed by `n` typed
+subvariants. -/
+abbrev polyTele (n : ℕ) (tt : Tele.{u}) : Tele.{u + 1} :=
+  (Tele.ulift.{u, u + 1} tt).app (subvArgTele.{u} n)
+
+/-- The assertions of a triple parametric on `n` typed subvariants over `tt`. -/
+abbrev PolyAsrt (n : ℕ) (tt : Tele.{u}) : Type (u + 1) := SymAsrt (polyTele.{u} n tt)
+
+/-- The programs of a triple parametric on `n` typed subvariants over `tt`. -/
+abbrev PolyExpr (n : ℕ) (tt : Tele.{u}) : Type (u + 1) := SymExpr (polyTele.{u} n tt)
+
+/-- The assertion a poly assertion gives at a tuple of symbolic values and a tuple of typed
+subvariants. -/
+def PolyAsrt.at {n : ℕ} {tt : Tele.{u}} (P : PolyAsrt n tt) (args : TeleArg tt)
+    (S : SubvArgs.{u} n) : Asrt.{u} :=
+  TeleFun.apply P ((TeleArg.uliftArg args).app S)
+
+/-- The poly assertion given by an ordinary function of the symbolic values and of the typed
+subvariants. -/
+def polyAsrt {n : ℕ} {tt : Tele.{u}} (F : TeleArg tt → SubvArgs.{u} n → Asrt.{u}) :
+    PolyAsrt n tt :=
+  teleBind fun args => F args.fst.ulower args.snd
+
+/-- The poly program given by an ordinary function of the symbolic values and of the typed
+subvariants. -/
+def polyExpr {n : ℕ} {tt : Tele.{u}} (e : TeleArg tt → SubvArgs.{u} n → Expr) :
+    PolyExpr n tt :=
+  teleLift fun args => e args.fst.ulower args.snd
+
+/-! ## Logics and solvers -/
+
+/-- A program logic: the triples it derives.  The universe of a logic is the universe of the
+assertions of those triples. -/
+structure Logic where
+  /-- The specifications the logic derives. -/
+  DerivableSpec {tt : Tele.{u + 1}} : Library → SymTriple.{u} tt → Prop
+
+/-- The checks on symbolic assertions the refutation algorithm queries. -/
+structure Solver where
+  /-- The satisfiability check: the tuples of symbolic values at which a symbolic assertion is
+  reported to hold of some state. -/
+  Model {tt : Tele.{1}} : SymAsrt.{0} tt → TeleArg tt → Prop
+  /-- The simplification check: the pairs of symbolic assertions over the same telescope
+  reported as interchangeable. -/
+  Simplify {tt : Tele.{1}} : SymAsrt.{0} tt → SymAsrt.{0} tt → Prop
+
+/-- A symbolic assertion the solver reports as satisfiable at some tuple of symbolic
+values. -/
+def Solver.Sat (Θ : Solver) {tt : Tele.{1}} (P : SymAsrt.{0} tt) : Prop :=
+  ∃ args, Θ.Model P args
 
 end RUXt

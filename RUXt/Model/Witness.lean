@@ -1,123 +1,161 @@
-import RUXt.Model.Summary
+import RUXt.Model.Summary.Specialise
+
+/-!
+# The witness program of a refutation
+
+A family of picks (`TypePicks`) chooses, for every type parameter of a source, a concrete type
+and summaries of the type space describing it, one per parameter carrying that type parameter.
+
+The witness program (`Source.witness`) specialises the source at every type parameter with the
+picks made for it (`Source.specialiseTypes`), and runs the result at a model of the query
+`Subvariant.typedSymAsrt`, in which each type parameter is described by the postconditions of
+the summaries picked for it (`TypePicks.subvArgs`).
+-/
 
 namespace RUXt
 
-/-! ### Witness programs -/
+/-! ## Families of picks -/
 
-/-- Binds each summary in `ςs` to a variable in `xs` and calls `f` on `xs`. -/
-def witness (f : Fid) (xs : List PVar) (ςs : SummPicks) : Tele.triple ςs -t> Expr :=
-  mergeSrcs xs ςs (.call f (Term.ofVars xs))
+/-- A family of picks: the entry at index `i` is the type picked for the type parameter `i`,
+together with the summaries describing it, the `r`-th of them for the `r`-th parameter carrying
+that type parameter. -/
+abbrev TypePicks := List (Ty × List Summary)
 
-/-- A call to `f` on summaries `ςs` yields post `[ε:Φ]`. -/
-def DerivableCall (Λ : Library) (f : Fid) (ςs : SummPicks)
-    (ε : LExit) (Φ : Val → Tele.triple ςs -t> Asrt) : Prop :=
-  ∃ L : Logic, L.DerivableSpec Λ
-        ⟨mergePosts ςs, (mergeVals ςs).map (fun vs => .call f (Term.ofVals vs)), ε, Φ⟩
+namespace TypePicks
 
-/-! ### Type safety of witnesses -/
+/-- The pick made for the type parameter `i`, or the unit type with no summary beyond the
+list. -/
+def pick (P : TypePicks) (i : TyIdx) : Ty × List Summary :=
+  P.getD i (Ty.unit, [])
 
-private theorem mergeSrcs_safeProgram {Λ : Library} {ςs : SummPicks}
-    {𝕍 : VarCtx} {call : Expr} {τ : Ty} {args : TeleArg (Tele.triple ςs)}
-    {xs : List PVar} (Hlen : ςs.length = xs.length)
-    (hsafe : ∀ τ ς, (τ, ς) ∈ ςs → ∀ args, SafeMain Λ (ς.src.apply args) τ)
-    (hcall : SafeProgram (𝕍.extend xs (ςs.map Prod.fst)) Λ call τ) :
-    SafeProgram 𝕍 Λ ((mergeSrcs xs ςs call).apply args) τ := by
-  revert xs 𝕍
-  induction' ςs with ς ςs ih
-  · intro 𝕍 xs hlen hcall
-    obtain rfl := by simpa using hlen.symm
-    rw [List.map_nil, VarCtx.extend_nil] at hcall
-    exact hcall
-  · intro 𝕍 xs hlen hcall
-    rcases xs with _ | ⟨x, xs⟩; contradiction
-    rcases args with ⟨v, rest⟩
-    rw [mergeSrcs_cons]; simp [SafeProgram]
-    refine ⟨ς.1, safeProgram_subset (hsafe _ _ (by simp) _) (PFun.empty_subset _), ?_⟩
-    rw [List.map_cons, VarCtx.extend_cons] at hcall
-    exact ih (by simp_all) (by simpa using hlen) hcall
+/-- A family of picks is available in the type space `S` for the source `s`: there is one pick
+per type parameter of `s`, with one summary per parameter of `s` carrying it, each filed in `S`
+for the type picked and having no type parameter. -/
+def Safe (P : TypePicks) (S : SummCtx) (s : Source) : Prop :=
+  P.length = s.arity ∧ ∀ i < s.arity, (P.pick i).2.length = s.paramCount i ∧
+    ∀ ς ∈ (P.pick i).2, S.MemTy (P.pick i).1.consId ς ∧ ς.src.arity = 0
 
-/-- Witness programs are safe main programs. -/
-theorem witness_safeMain {Λ : Library} {S : SummCtx} {ςs : SummPicks}
-    {args : TeleArg (Tele.triple ςs)} {f : Fid} {params : List (PVar × Ty)}
-    {body : Expr} {τ : Ty} {safe : Bool}
-    (hsumm : ValidSummCtx Λ S) (hsub : S [⊐] ςs)
-    (himpl : Λ.MapsTo f ⟨params, body, τ, safe⟩)
-    (htypes : ςs.map Prod.fst = params.map Prod.snd) :
-    SafeMain Λ ((witness f (params.map Prod.fst) ςs).apply args) τ := by
-  have hlen : ςs.length = (params.map Prod.fst).length := by
-    simpa using congrArg List.length htypes
-  obtain hsafe := fun τ ς h => (hsumm τ ς (hsub τ ς h)).1.1
-  refine mergeSrcs_safeProgram hlen hsafe ?_
-  rw [htypes, VarCtx.extend_empty (Λ.params_nodup himpl)]
-  exact safe_call himpl
+/-- The symbolic values of the summaries picked for the type parameter `k`. -/
+abbrev pickTele (P : TypePicks) (k : TyIdx) : Tele.{0} :=
+  Source.mergedTeleOf ((P.pick k).2.map (·.src))
 
-/-! ### Semantics of witnesses -/
+/-- The symbolic values of the summaries picked for the first `k` type parameters, the last
+type parameter first, associated to the right. -/
+def mergedTele (P : TypePicks) : ℕ → Tele.{0}
+  | 0 => .nil
+  | k + 1 => (P.pickTele k).app (P.mergedTele k)
 
-private theorem mergeSrcs_subst_nin {xs : List PVar} {ςs : SummPicks}
-    (hclosed : ∀ τ ς, (τ, ς) ∈ ςs → ∀ args, (ς.src.apply args).ClosedProgram)
-    {x : PVar} (hnin : x ∉ xs) {body : Expr} {v : Val} {args : TeleArg (Tele.triple ςs)}:
-    ((mergeSrcs xs ςs body).apply args).subst (.named x) v
-      = (mergeSrcs xs ςs (body.subst (.named x) v)).apply args := by
-  revert xs
-  induction' ςs with ς ςs ih
-  · simp
-  · intro xs hnin
-    rcases ς with ⟨τ, ς⟩
-    rcases args with ⟨_, rest⟩
-    simp [mergeSrcs_cons, Expr.subst, Expr.substTerm]
-    refine ⟨Expr.Closed.subst_eq (hclosed τ ς (by simp) _) _ (by tauto), ?_⟩
-    cases xs
-    · exact ih (fun τ ς h => hclosed τ ς (List.mem_cons_of_mem _ h)) (by tauto)
-    · simp at hnin; simp [if_neg (Ne.symm hnin.1)]
-      exact ih (fun τ ς h => hclosed τ ς (List.mem_cons_of_mem _ h)) hnin.2
+/-! ## Specialising every type parameter -/
 
-open scoped PFun
+/-- The symbolic values of a source with symbolic values `t` specialised at its first `k` type
+parameters: those of `t`, then those of the summaries picked for each of these type
+parameters, the last one first, associated to the left. -/
+def specTele (P : TypePicks) : ℕ → Tele.{0} → Tele.{0}
+  | 0, t => t
+  | k + 1, t => P.specTele k (t.app (P.pickTele k))
 
-private theorem witness_frame_step {Λ : Library} {ςs : SummPicks}
-    (hreach : ∀ τ ς, (τ, ς) ∈ ςs → ReachableFromMain Λ τ ς.src .lok ς.post)
-    {xs : List PVar} (hdup : xs.Nodup)
-    (hlen : xs.length = ςs.length)
-    {hF h h' : Heap} (hdisj : hF ##ₘ h)
-    {args : TeleArg (Tele.triple ςs)} (hpre: HProp h ((mergePosts ςs).apply args))
-    {body : Expr} {εₛ : Exit}
-    (hstep : Λ ⊢ ⟨hF ∪ h | body.substs xs (
-        Term.ofVals ((mergeVals ςs).apply args)
-    )⟩ ⇓ᵢ ⟨h' | εₛ⟩) :
-     Λ ⊢ ⟨hF | (mergeSrcs xs ςs body).apply args⟩ ⇓ᵢ ⟨h' | εₛ⟩ := by
-  revert body args xs hF h h'
-  induction' ςs with ς ςs ih
-  · simp_all
-  · intro xs hdup hlen hF h h' hdisjF args hpre body hstep
-    rcases xs with _ | ⟨x, xs⟩; contradiction
-    rcases args with ⟨v, rest⟩
-    rw [mergeSrcs_cons]
-    rw [mergePosts_cons] at hpre
-    obtain ⟨h1, h2, rfl, hdisj, hpre1, hpre2⟩ := hpre
-    obtain ⟨hdisjF1, hdisjF2⟩ := PFun.disjoint_union_r.1 hdisjF
-    rw [← PFun.union_assoc, mergeVals_cons] at hstep
-    obtain ⟨_, hux⟩ := hreach ς.1 ς.2 (by simp)
-    obtain ⟨h, hemp, εₛ, ⟨⟩, hstep1⟩ := hux rest.fst v h1 hpre1
-    simp [teleBind_apply] at hemp; subst hemp
-    rcases frame_addition hstep1 hF hdisjF1.symm with ⟨hstep1, _⟩ | ⟨l, Heq, _⟩
-    · simp_all; refine FrameStep.letIn hstep1 ?_
-      obtain hclosed := fun τ ς h args => safeMain_closed ((hreach τ ς (Or.inr h)).1 args)
-      rw [mergeSrcs_subst_nin hclosed hdup.1, PFun.union_comm hdisjF1.symm]
-      exact ih hdup.2 hlen (PFun.disjoint_union_l.2 ⟨hdisjF2, hdisj⟩) hpre2 hstep
-    · contradiction
+/-- The source `s` specialised at its type parameter `i` to the type picked for it, the
+summaries picked for it being let-bound at the parameters carrying `i`. -/
+def specStep (P : TypePicks) (m : ℕ) (i : TyIdx) (s : Source) : Source :=
+  let ⟨τ, summs⟩ := P.pick i
+  s.specialise m i τ.consId summs
 
-/-- Witness programs exhibit the same behaviour as a function call on the summaries. -/
-theorem witness_triple {Λ : Library} {S : SummCtx} {ςs : SummPicks}
-    {f : Fid} {xs : List PVar} {ε : LExit} {Φ : Val → Tele.triple ςs -t> Asrt}
-    (hsumm : ValidSummCtx Λ S) (hsub : S [⊐] ςs)
-    (hdup : xs.Nodup) (hlen : xs.length = ςs.length)
-    (hcall : DerivableCall Λ f ςs ε Φ) :
-    UXFrameTriple Λ (teleBind fun _ ↦ Asrt.emp, witness f xs ςs, ε, Φ) := by
-  intro args r h' hQ; rw [teleBind_apply]
-  obtain ⟨L, hspec⟩ := hcall
-  obtain ⟨h, hpre, εₛ, hε, hstep⟩ := L.ux_frame_soundness hspec args r h' hQ
-  rw [teleMap_apply] at hstep
-  refine ⟨∅, rfl, εₛ, hε, ?_⟩
-  obtain hreach := fun τ ς h => (hsumm τ ς (hsub τ ς h)).1
-  refine witness_frame_step hreach hdup hlen (PFun.disjoint_empty_l h) hpre ?_
-  rw [PFun.empty_union, Expr.substs_call (by rw [mergeVals_length]; exact hlen) hdup]
-  exact hstep
+/-- The type arity and template of `s` specialised at its first `k` type parameters, the last
+one first. -/
+def specFoldFn (P : TypePicks) (m : ℕ) :
+    (k : ℕ) → (s : Source) → (n : ℕ) × FunTempl (P.specTele k s.teleOf) n
+  | 0, s => ⟨s.arity, s.fn⟩
+  | i + 1, s => P.specFoldFn m i (P.specStep m i s)
+
+/-- The symbolic values of a source followed by those of the summaries picked for its first
+`k` type parameters, reassociated into symbolic values of the specialised source. -/
+def foldReindexArgs (P : TypePicks) : (k : ℕ) → (t : Tele.{0}) →
+    TeleArg (t.app (P.mergedTele k)) → TeleArg (P.specTele k t)
+  | 0, _, a => a.fst
+  | k + 1, _, a => P.foldReindexArgs k _ a.assoc
+
+end TypePicks
+
+namespace Source
+
+/-- The symbolic values of `s` followed by those of the summaries picked for its type
+parameters. -/
+abbrev typedTele (s : Source) (P : TypePicks) : Tele.{0} :=
+  s.teleOf.app (P.mergedTele s.arity)
+
+/-- The source `s` specialised at all of its type parameters with the picks `P`, the last one
+first. -/
+def specialiseTypes (s : Source) (P : TypePicks) : Source :=
+  let ⟨arity, fn⟩ := P.specFoldFn (maxNameLen s.fn.paramNames) s.arity s
+  ⟨P.specTele s.arity s.teleOf, arity, fn⟩
+
+/-- The symbolic values of `s` followed by those of the picked summaries, as symbolic values of
+the fully specialised source. -/
+def reindexArgs (s : Source) (P : TypePicks) :
+    TeleArg (s.typedTele P) → TeleArg (s.specialiseTypes P).teleOf :=
+  P.foldReindexArgs s.arity s.teleOf
+
+/-- The witness program of the source `s` at the picks `P` and the symbolic values `args`. -/
+def witness (s : Source) (P : TypePicks) (args : TeleArg (s.typedTele P)) : Expr :=
+  -- Specialise every type parameter of `s` with its picks
+  let src := s.specialiseTypes P
+  -- Reassociate the symbolic values for the specialised source
+  let args := s.reindexArgs P args
+  -- Instantiate the specialised source at no type argument and take its body
+  match src.fn.instantiate args [] with
+  | some γ => γ.body
+  | none => .error
+
+end Source
+
+/-! ## The query at the types a family of picks describes -/
+
+namespace TypePicks
+
+/-- The symbolic values of the summaries picked for the type parameter `i < k`, projected out of
+those of the summaries picked for the first `k` type parameters. -/
+def pickArgs (P : TypePicks) :
+    {k : ℕ} → TeleArg (P.mergedTele k) → (i : Fin k) → TeleArg (P.pickTele i)
+  | 0, _, i => i.elim0
+  | _ + 1, args, i => i.lastCases args.fst (P.pickArgs args.snd)
+
+/-- The postconditions of summaries without type parameter, each at its own symbolic values
+from `args`, as assertions on its result value. -/
+def posts : (ςs : List Summary) → TeleArg (Source.mergedTeleOf (ςs.map (·.src))) →
+    List (Val → Asrt.{0})
+  | [], _ => []
+  | ς :: ςs, args =>
+    let post v :=
+      let vals := .replicate ς.valArity .unit
+      let types := .replicate ς.src.arity .unit
+      ς.ownedAt v (args.fst.app vals) (SubvArgs.ofTys types)
+    post :: posts ςs args.snd
+
+/-- The typed subvariants the picks supply for `arity` type parameters, at the symbolic values
+`args` of the picked summaries: the type picked for each type parameter, with the
+postconditions of the summaries picked for it as subvariants. -/
+def subvArgs (P : TypePicks) (arity : ℕ)
+    (args : TeleArg (P.mergedTele arity)) : SubvArgs.{0} arity :=
+  TeleArg.ofListPad default arity
+    ((List.finRange arity).map fun (i : Fin arity) =>
+      ⟨(P.pick i).1, posts (P.pick i).2 (P.pickArgs args i)⟩)
+
+end TypePicks
+
+namespace Subvariant
+
+/-- The symbolic values of a subvariant followed by those of the summaries picked for its type
+parameters. -/
+def typedTele (Φ : Subvariant) (P : TypePicks) : Tele.{0} :=
+  Φ.teleOf.app (P.mergedTele Φ.arity)
+
+/-- A subvariant as a symbolic assertion of its symbolic values and those of the picked
+summaries, with its type parameters described by the picks (`TypePicks.subvArgs`) and its
+result value and input values existentially bound. -/
+def typedSymAsrt (Φ : Subvariant) (P : TypePicks) : SymAsrt.{0} (symTele (Φ.typedTele P)) :=
+  RUXt.symAsrt fun args => .ex fun r => .ex fun vs =>
+    (Φ.asrt r).at (args.fst.app vs) (P.subvArgs Φ.arity args.snd)
+
+end Subvariant
+
+end RUXt

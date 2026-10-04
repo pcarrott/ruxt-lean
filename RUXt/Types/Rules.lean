@@ -183,7 +183,7 @@ theorem hupdate_singleton_union {b : Block} {bv₀ bv : BlockValue} {hkeep : Hea
   ext b';
   by_cases h : b' = b <;> simp_all +decide [ hupdate_apply, PMap.singleton_apply, PMap.union_apply ]
 
-/-- Extraction of the witnesses hidden in the affine `box` precondition. -/
+/-- Extraction of the sources hidden in the affine `box` precondition. -/
 theorem box_affine_extract {h : Heap} {vl : Val} {τ : Ty}
     (hP : hprop h ([∗ₜ [vl ⊲ box τ]])) :
     ∃ l w hd hrest, vl = .loc l ∧ l.2 = 0 ∧
@@ -205,7 +205,7 @@ theorem box_affine_extract {h : Heap} {vl : Val} {τ : Ty}
   · cases h₅;
     contradiction
 
-/-- Extraction of the witnesses hidden in the affine `own τ₁`/`τ₂` store
+/-- Extraction of the sources hidden in the affine `own τ₁`/`τ₂` store
 precondition. -/
 theorem own_store_affine_extract {h : Heap} {vl v : Val} {τ₁ : Option Ty} {τ₂ : Ty}
     (hP : hprop h ([∗ₜ [vl ⊲ own τ₁, v ⊲ τ₂]])) :

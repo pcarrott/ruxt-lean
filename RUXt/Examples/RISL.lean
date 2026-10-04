@@ -1,36 +1,53 @@
-import RUXt.Model.Logic
+import RUXt.Semantics.Logic.Poly
 
 namespace RUXt
+
+/-!
+# RISL
+
+The RISL proof rules (`WfSpec`), well-formed specification contexts (`WfSpecCtx`), their
+soundness, and RISL as a sound logic (`risl`, `risl_sound`).
+
+The rules are stated at an arbitrary universe `u`, about triples `SymTriple.{u} tt` over
+telescopes `tt : Tele.{u + 1}`.  The small types of the language are lifted where they occur as
+binders: the base rules bind `Lifted Loc`, `Lifted Val`, `Lifted Pure`.  A base rule, whose
+telescope contains exactly its used variables, is instantiated at another telescope with
+`WfSpec.reindex`.
+-/
+
+universe u
 
 /-! ### Function specifications -/
 
 /-- A function specification is parameterised over an arbitrary telescope `tt`
-together with a *value projection* `vals : tt -t> List Val`, which reads off,
-for each instantiation of the telescope, the list of concrete argument values
-with which the function is called. -/
-def FunSpec : Type 1 := (tt : Tele.{0}) ×
-  (tt -t> List Val) × (tt -t> Asrt.{0}) × LExit × (Val → tt -t> Asrt.{0})
+together with a *type projection* `tys : TeleLift tt (List Ty)` and a *value projection*
+`vals : TeleLift tt (List Val)`, which read off, for each instantiation of the telescope, the
+list of type arguments the function is instantiated at and the list of concrete argument
+values it is called with. -/
+def FunSpec : Type (u + 2) := (tt : Tele.{u + 1}) × TeleLift tt (List Ty) ×
+  TeleLift tt (List Val) × SymAsrt tt × LExit × (Val → SymAsrt tt)
 
 /-- The exit tag of a function specification. -/
-def FunSpec.exit : FunSpec → LExit
-  | ⟨_, _, _, ε, _⟩ => ε
+def FunSpec.exit : FunSpec.{u} → LExit
+  | ⟨_, _, _, _, ε, _⟩ => ε
 
-def SpecCtx := String → List FunSpec
-instance : EmptyCollection SpecCtx := ⟨fun _ => []⟩
+def SpecCtx := String → List FunSpec.{u}
+instance : EmptyCollection SpecCtx.{u} := ⟨fun _ => []⟩
 
-@[simp] theorem SpecCtx.empty_apply (f : String) : (∅ : SpecCtx) f = [] := rfl
+@[simp] theorem SpecCtx.empty_apply (f : String) : (∅ : SpecCtx.{u}) f = [] := rfl
 
 /-- Specification context update. -/
-def SpecCtx.update (s : FunSpec) (f : String) (Γ : SpecCtx) : SpecCtx :=
+def SpecCtx.update (s : FunSpec.{u}) (f : String) (Γ : SpecCtx.{u}) : SpecCtx.{u} :=
   Function.update Γ f (s :: Γ f)
 /-- Specification context inclusion, `Γ [⊆] Γ'`. -/
-def SpecCtx.Subseteq (Γ Γ' : SpecCtx) : Prop := ∀ f, Γ f ⊆ Γ' f
+def SpecCtx.Subseteq (Γ Γ' : SpecCtx.{u}) : Prop := ∀ f, Γ f ⊆ Γ' f
 @[inherit_doc] scoped infix:50 " [⊆] " => SpecCtx.Subseteq
 
-theorem SpecCtx.update_apply (Γ : SpecCtx) (f : String) (s : FunSpec) :
+theorem SpecCtx.update_apply (Γ : SpecCtx.{u}) (f : String) (s : FunSpec.{u}) :
     Γ.update s f f = s :: Γ f :=
   Function.update_self ..
-theorem SpecCtx.update_apply_ne (Γ : SpecCtx) {f g : String} (s : FunSpec) (h : f ≠ g) :
+theorem SpecCtx.update_apply_ne (Γ : SpecCtx.{u}) {f g : String} (s : FunSpec.{u})
+    (h : f ≠ g) :
     Γ.update s f g = Γ g :=
   Function.update_of_ne (Ne.symm h) ..
 
@@ -63,224 +80,261 @@ macro_rules
   | `($Γ ⊢ λₗ $bs:funBinder*, ⌈$P⌉ $e ⌈$ε : λₗ $r, $Q⌉) => do
       let wf := Lean.mkIdent `RUXt.WfSpec
       let tl ← `([tele $bs*])
+      -- the program is written as an `Expr`; the triple stores it lifted into the universe
+      -- of the telescope, so the notation inserts the lift.
       if bs.isEmpty then
-        `($wf $Γ (tt := $tl) ⟨$P, $e, $ε, fun $r => $Q⟩)
+        `($wf $Γ (tt := $tl) ⟨$P, ULift.up $e, $ε, fun $r => $Q⟩)
       else
-        `($wf $Γ (tt := $tl) ⟨fun $bs* => $P, fun $bs* => $e, $ε, fun $r => fun $bs* => $Q⟩)
+        `($wf $Γ (tt := $tl)
+          ⟨fun $bs* => $P, fun $bs* => ULift.up $e, $ε, fun $r => fun $bs* => $Q⟩)
 
 /-! ### The RISL proof rules  -/
 
 /-- RISL triples, `Γ ⊢ ⌈P⌉ e ⌈ε, Q⌉`. -/
-inductive WfSpec : SpecCtx → {tt : Tele} → SymTriple tt → Prop
+inductive WfSpec : SpecCtx.{u} → {tt : Tele.{u + 1}} → SymTriple.{u} tt → Prop
   | pure {Γ : SpecCtx} :
-      Γ ⊢ λₗ p, ⌈ .emp ⌉ (.pure p) ⌈ .lok : λₗ r, ⌞ some r = Pure.eval p ⌟ ⌉
+      Γ ⊢ λₗ (p : Lifted Pure), ⌈ .emp ⌉ (.pure p.down)
+        ⌈ .lok : λₗ r, ⌞ some r = Pure.eval p.down ⌟ ⌉
   | assume {Γ : SpecCtx} :
       Γ ⊢ λₗ , ⌈ .emp ⌉ (.assume .true) ⌈ .lok : λₗ r, ⌞ r = .unit ⌟ ⌉
   | error {Γ : SpecCtx} :
       Γ ⊢ λₗ , ⌈ .emp ⌉ (.error) ⌈ .lerr : λₗ r, ⌞ r = .unit ⌟ ⌉
-  | letIn {Γ : SpecCtx} {tt : Tele} {x : Binder} {e₁ e₂ : tt -t> Expr}
-        {P : tt -t> Asrt} {ε : LExit} {Φ Φ' : Val → tt -t> Asrt} {v : Val} :
+  | letIn {Γ : SpecCtx} {tt : Tele} {x : Binder} {e₁ e₂ : SymExpr tt}
+        {P : SymAsrt tt} {ε : LExit} {Φ Φ' : Val → SymAsrt tt} {v : TeleLift tt Val} :
       (Γ ⊢ ⌈P⌉ e₁ ⌈.lok, Φ'⌉) →
-      (Γ ⊢ ⌈Φ' v⌉ (e₂.map fun e => e.subst x v) ⌈ε, Φ⌉) →
-      (Γ ⊢ ⌈P⌉ (teleBind fun args => .letIn x (e₁.apply args) (e₂.apply args)) ⌈ε, Φ⌉)
-  | letCut {Γ : SpecCtx} {tt : Tele} {x : Binder} {e₁ e₂ : tt -t> Expr}
-        {P : tt -t> Asrt} {ε : LExit} {Φ : Val → tt -t> Asrt} :
+      (Γ ⊢ ⌈teleBind fun args => (Φ' (v.at args)).apply args⌉ (e₂.subst x v) ⌈ε, Φ⌉) →
+      (Γ ⊢ ⌈P⌉ (SymExpr.letIn x e₁ e₂) ⌈ε, Φ⌉)
+  | let_cut {Γ : SpecCtx} {tt : Tele} {x : Binder} {e₁ e₂ : SymExpr tt}
+        {P : SymAsrt tt} {ε : LExit} {Φ : Val → SymAsrt tt} :
       (Γ ⊢ ⌈P⌉ e₁ ⌈ε, Φ⌉) → ε ≠ .lok →
-      (Γ ⊢ ⌈P⌉ (teleBind fun args => .letIn x (e₁.apply args) (e₂.apply args)) ⌈ε, Φ⌉)
-  | choice {Γ : SpecCtx} {tt : Tele} {eᵢ e₁ e₂ : tt -t> Expr}
-        {P : tt -t> Asrt} {ε : LExit} {Φ : Val → tt -t> Asrt} :
+      (Γ ⊢ ⌈P⌉ (SymExpr.letIn x e₁ e₂) ⌈ε, Φ⌉)
+  | choice {Γ : SpecCtx} {tt : Tele} {eᵢ e₁ e₂ : SymExpr tt}
+        {P : SymAsrt tt} {ε : LExit} {Φ : Val → SymAsrt tt} :
       (eᵢ = e₁ ∨ eᵢ = e₂) → (Γ ⊢ ⌈P⌉ eᵢ ⌈ε, Φ⌉) →
-      (Γ ⊢ ⌈P⌉ (teleBind fun args => .choice (e₁.apply args) (e₂.apply args)) ⌈ε, Φ⌉)
+      (Γ ⊢ ⌈P⌉ (SymExpr.choice e₁ e₂) ⌈ε, Φ⌉)
   | alloc {Γ : SpecCtx} :
-      Γ ⊢ λₗ , ⌈ .emp ⌉ (.alloc (.int 1)) ⌈ .lok : λₗ r, .ex fun l => ⌞ r = .loc l ⌟ ∗ l ↦? ⌉
+      Γ ⊢ λₗ , ⌈ .emp ⌉ (.alloc (.int 1))
+        ⌈ .lok : λₗ r, .ex fun l : Lifted Loc => ⌞ r = .loc l.down ⌟ ∗ l.down ↦? ⌉
+  -- The three dereferencing commands read their location out of an arbitrary symbolic value
+  -- `w`, with the pure fact that `w` *is* the location `l` carried by the pre- and the
+  -- postcondition.
   | free {Γ : SpecCtx} :
-      Γ ⊢ λₗ l v, ⌈ l ↦ v ⌉ (.free (.loc l)) ⌈ .lok : λₗ r, ⌞ r = .unit ⌟ ∗ l ↦∅ ⌉
-  | freeUninit {Γ : SpecCtx} :
-      Γ ⊢ λₗ l, ⌈ l ↦? ⌉ (.free (.loc l)) ⌈ .lok : λₗ r, ⌞ r = .unit ⌟ ∗ l ↦∅ ⌉
-  | freeFreed {Γ : SpecCtx} :
-      Γ ⊢ λₗ l, ⌈ l ↦∅ ⌉ (.free (.loc l)) ⌈ .lerr : λₗ r, ⌞ r = .unit ⌟ ∗ l ↦∅ ⌉
+      Γ ⊢ λₗ (w : Lifted Val) (l : Lifted Loc) (v : Lifted Val),
+        ⌈ ⌞ w.down = .loc l.down ⌟ ∗ l.down ↦ v.down ⌉ (.free (.val w.down))
+        ⌈ .lok : λₗ r, ⌞ w.down = .loc l.down ⌟ ∗ (⌞ r = .unit ⌟ ∗ l.down ↦∅) ⌉
+  | free_uninit {Γ : SpecCtx} :
+      Γ ⊢ λₗ (w : Lifted Val) (l : Lifted Loc),
+        ⌈ ⌞ w.down = .loc l.down ⌟ ∗ l.down ↦? ⌉ (.free (.val w.down))
+        ⌈ .lok : λₗ r, ⌞ w.down = .loc l.down ⌟ ∗ (⌞ r = .unit ⌟ ∗ l.down ↦∅) ⌉
+  | free_freed {Γ : SpecCtx} :
+      Γ ⊢ λₗ (w : Lifted Val) (l : Lifted Loc),
+        ⌈ ⌞ w.down = .loc l.down ⌟ ∗ l.down ↦∅ ⌉ (.free (.val w.down))
+        ⌈ .lerr : λₗ r, ⌞ w.down = .loc l.down ⌟ ∗ (⌞ r = .unit ⌟ ∗ l.down ↦∅) ⌉
   | store {Γ : SpecCtx} :
-      Γ ⊢ λₗ l v v', ⌈ l ↦ v' ⌉ (.store (.loc l) (.val v)) ⌈ .lok : λₗ r, ⌞ r = .unit ⌟ ∗ l ↦ v ⌉
-  | storeUninit {Γ : SpecCtx} :
-      Γ ⊢ λₗ l v, ⌈ l ↦? ⌉ (.store (.loc l) (.val v)) ⌈ .lok : λₗ r, ⌞ r = .unit ⌟ ∗ l ↦ v ⌉
-  | storeFreed {Γ : SpecCtx} :
-      Γ ⊢ λₗ l v, ⌈ l ↦∅ ⌉ (.store (.loc l) (.val v)) ⌈ .lerr : λₗ r, ⌞ r = .unit ⌟ ∗ l ↦∅ ⌉
+      Γ ⊢ λₗ (w : Lifted Val) (l : Lifted Loc) (v : Lifted Val) (v' : Lifted Val),
+        ⌈ ⌞ w.down = .loc l.down ⌟ ∗ l.down ↦ v'.down ⌉
+        (.store (.val w.down) (.val v.down))
+        ⌈ .lok : λₗ r, ⌞ w.down = .loc l.down ⌟ ∗ (⌞ r = .unit ⌟ ∗ l.down ↦ v.down) ⌉
+  | store_uninit {Γ : SpecCtx} :
+      Γ ⊢ λₗ (w : Lifted Val) (l : Lifted Loc) (v : Lifted Val),
+        ⌈ ⌞ w.down = .loc l.down ⌟ ∗ l.down ↦? ⌉
+        (.store (.val w.down) (.val v.down))
+        ⌈ .lok : λₗ r, ⌞ w.down = .loc l.down ⌟ ∗ (⌞ r = .unit ⌟ ∗ l.down ↦ v.down) ⌉
+  | store_freed {Γ : SpecCtx} :
+      Γ ⊢ λₗ (w : Lifted Val) (l : Lifted Loc) (v : Lifted Val),
+        ⌈ ⌞ w.down = .loc l.down ⌟ ∗ l.down ↦∅ ⌉
+        (.store (.val w.down) (.val v.down))
+        ⌈ .lerr : λₗ r, ⌞ w.down = .loc l.down ⌟ ∗ (⌞ r = .unit ⌟ ∗ l.down ↦∅) ⌉
   | load {Γ : SpecCtx} :
-      Γ ⊢ λₗ l v, ⌈ l ↦ v ⌉ (.load (.loc l)) ⌈ .lok : λₗ r, ⌞ r = v ⌟ ∗ l ↦ v ⌉
-  | loadUninit {Γ : SpecCtx} :
-      Γ ⊢ λₗ l, ⌈ l ↦? ⌉ (.load (.loc l)) ⌈ .lerr : λₗ r, ⌞ r = .unit ⌟ ∗ l ↦? ⌉
-  | loadFreed {Γ : SpecCtx} :
-      Γ ⊢ λₗ l, ⌈ l ↦∅ ⌉ (.load (.loc l)) ⌈ .lerr : λₗ r, ⌞ r = .unit ⌟ ∗ l ↦∅ ⌉
-  | frame {Γ : SpecCtx} {tt : Tele} {e : tt -t> Expr}
-        {P R : tt -t> Asrt} {ε : LExit} {Φ : Val → tt -t> Asrt} :
+      Γ ⊢ λₗ (w : Lifted Val) (l : Lifted Loc) (v : Lifted Val),
+        ⌈ ⌞ w.down = .loc l.down ⌟ ∗ l.down ↦ v.down ⌉ (.load (.val w.down))
+        ⌈ .lok : λₗ r, ⌞ w.down = .loc l.down ⌟ ∗ (⌞ r = v.down ⌟ ∗ l.down ↦ v.down) ⌉
+  | load_uninit {Γ : SpecCtx} :
+      Γ ⊢ λₗ (w : Lifted Val) (l : Lifted Loc),
+        ⌈ ⌞ w.down = .loc l.down ⌟ ∗ l.down ↦? ⌉ (.load (.val w.down))
+        ⌈ .lerr : λₗ r, ⌞ w.down = .loc l.down ⌟ ∗ (⌞ r = .unit ⌟ ∗ l.down ↦?) ⌉
+  | load_freed {Γ : SpecCtx} :
+      Γ ⊢ λₗ (w : Lifted Val) (l : Lifted Loc),
+        ⌈ ⌞ w.down = .loc l.down ⌟ ∗ l.down ↦∅ ⌉ (.load (.val w.down))
+        ⌈ .lerr : λₗ r, ⌞ w.down = .loc l.down ⌟ ∗ (⌞ r = .unit ⌟ ∗ l.down ↦∅) ⌉
+  | frame {Γ : SpecCtx} {tt : Tele} {e : SymExpr tt}
+        {P R : SymAsrt tt} {ε : LExit} {Φ : Val → SymAsrt tt} :
       (Γ ⊢ ⌈P⌉ e ⌈ε, Φ⌉) →
-      (Γ ⊢ ⌈teleBind fun args => P.apply args ∗ R.apply args⌉ e
-        ⌈ε, fun v => teleBind fun args => (Φ v).apply args ∗ R.apply args⌉)
-  | disj {Γ : SpecCtx} {tt : Tele} {e : tt -t> Expr}
-        {P₁ P₂ : tt -t> Asrt} {ε : LExit} {Φ₁ Φ₂ : Val → tt -t> Asrt} :
+      (Γ ⊢ ⌈teleBind fun args => R.apply args ∗ P.apply args⌉ e
+        ⌈ε, fun v => teleBind fun args => R.apply args ∗ (Φ v).apply args⌉)
+  | disj {Γ : SpecCtx} {tt : Tele} {e : SymExpr tt}
+        {P₁ P₂ : SymAsrt tt} {ε : LExit} {Φ₁ Φ₂ : Val → SymAsrt tt} :
       (Γ ⊢ ⌈P₁⌉ e ⌈ε, Φ₁⌉) → (Γ ⊢ ⌈P₂⌉ e ⌈ε, Φ₂⌉) →
       (Γ ⊢ ⌈teleBind fun args => P₁.apply args ∨ₕ P₂.apply args⌉ e
         ⌈ε, fun v => teleBind fun args => (Φ₁ v).apply args ∨ₕ (Φ₂ v).apply args⌉)
+  -- The conclusion may only rename the program along the telescope map `f`: the two programs
+  -- have to agree at *every* instantiation of the telescope, whether or not the assertions
+  -- of the triple are satisfiable there.
   | cons {Γ Γ' : SpecCtx} {tt tt' : Tele}
-        {P : tt -t> Asrt} {e : tt -t> Expr} {Φ : Val → tt -t> Asrt}
-        {P' : tt' -t> Asrt} {e' : tt' -t> Expr} {Φ' : Val → tt' -t> Asrt}
+        {P : SymAsrt tt} {e : SymExpr tt} {Φ : Val → SymAsrt tt}
+        {P' : SymAsrt tt'} {e' : SymExpr tt'} {Φ' : Val → SymAsrt tt'}
         {ε : LExit} (f : TeleArg tt → TeleArg tt') :
       Γ' [⊆] Γ →
       (∀ args, ⊨ (P'.apply (f args) →ₕ P.apply args)) →
       (∀ v args, ⊨ (Φ v).apply args →ₕ (Φ' v).apply (f args)) →
-      (∀ args, e.apply args = e'.apply (f args)) →
+      (∀ args, e.at args = e'.at (f args)) →
       (Γ' ⊢ ⌈P'⌉ e' ⌈ε, Φ'⌉) →
       (Γ ⊢ ⌈P⌉ e ⌈ε, Φ⌉)
-  | ex {Γ : SpecCtx} {tt : Tele} {X : Type} {e : tt -t> Expr}
-        {P : tt -t> Asrt} {ε : LExit} {Φ : Val → tt -t> Asrt} :
-      (Γ ⊢ ⌈P⌉ e ⌈ε, Φ⌉) →
-      (Γ ⊢ ⌈teleBind fun args => .ex fun _ : X => P.apply args⌉ e
-        ⌈ε, fun v => teleBind fun args => .ex fun _ : X => (Φ v).apply args⌉)
-  | call {Γ : SpecCtx} {tt : Tele} {f : String} {vals : tt -t> List Val}
-      {P : tt -t> Asrt} {ε : LExit} {Φ : Val → tt -t> Asrt} :
-      (⟨tt, vals, P, ε, Φ⟩ : FunSpec) ∈ Γ f →
-      (Γ ⊢ ⌈P⌉ (vals.map fun l => .call f (Term.ofVals l)) ⌈ε, Φ⌉)
+  | ex {Γ : SpecCtx} {tt : Tele} {X : Type u} {e : SymExpr tt}
+        {P : SymAsrt (Tele.cons (fun _ : ULift.{u + 1, u} X => tt))} {ε : LExit}
+        {Φ : Val → SymAsrt (Tele.cons (fun _ : ULift.{u + 1, u} X => tt))} :
+      (Γ ⊢ ⌈P⌉ (e.reindex Sigma.snd) ⌈ε, Φ⌉) →
+      (Γ ⊢ ⌈teleBind fun args => .ex fun x : X => P.apply ⟨.up x, args⟩⌉ e
+        ⌈ε, fun v => teleBind fun args => .ex fun x : X => (Φ v).apply ⟨.up x, args⟩⌉)
+  | call {Γ : SpecCtx} {tt : Tele} {f : String} {tys : TeleLift tt (List Ty)}
+      {vals : TeleLift tt (List Val)}
+      {P : SymAsrt tt} {ε : LExit} {Φ : Val → SymAsrt tt} :
+      (⟨tt, tys, vals, P, ε, Φ⟩ : FunSpec) ∈ Γ f →
+      (Γ ⊢ ⌈P⌉ (SymExpr.call f tys vals) ⌈ε, Φ⌉)
 
 /-- Re-index a derivation along a telescope map `f : TeleArg tt' → TeleArg tt`.
 This is the special case of the (generalised) Consequence rule that only changes
 the telescope, leaving the underlying assertions and program untouched (up to the
-reindexing).  It is the standard way to instantiate a base rule — whose telescope
-contains *exactly* its used variables. -/
-theorem WfSpec.reindex {Γ : SpecCtx} {tt tt' : Tele} {e : tt -t> Expr}
-    {P : tt -t> Asrt} {ε : LExit} {Φ : Val → tt -t> Asrt}
+reindexing). -/
+theorem WfSpec.reindex {Γ : SpecCtx.{u}} {tt tt' : Tele.{u + 1}} {e : SymExpr tt}
+    {P : SymAsrt tt} {ε : LExit} {Φ : Val → SymAsrt tt}
     (f : TeleArg tt' → TeleArg tt) (h : Γ ⊢ ⌈P⌉ e ⌈ε, Φ⌉) :
-    Γ ⊢ ⌈teleBind fun args => P.apply (f args)⌉
-        (teleBind fun args => e.apply (f args))
+    Γ ⊢ ⌈teleBind fun args => P.apply (f args)⌉ (e.reindex f)
         ⌈ε, fun r => teleBind fun args => (Φ r).apply (f args)⌉ :=
   .cons f (fun _ => List.Subset.refl _)
-    (fun args => by rw [teleBind_apply]; exact hImplies_refl _)
-    (fun r args => by rw [teleBind_apply]; exact hImplies_refl _)
-    (fun args => by rw [teleBind_apply])
+    (fun args => by rw [teleBind_apply]; exact hValid_implies_refl _)
+    (fun r args => by rw [teleBind_apply]; exact hValid_implies_refl _)
+    (fun args => by rw [SymExpr.reindex_at])
     h
 
-abbrev Expr.substSym (body : Expr) (xs : List (PVar × Ty))
-    {tt : Tele} (vals : tt -t> List Val) : tt -t> Expr :=
-  teleBind fun args => body.substs (xs.map Prod.fst) (Term.ofVals (vals.apply args))
+/-- Well-formed specification contexts, `γ ≺ₛ Γ`.
 
-/-- Well-formed specification contexts, `γ ≺ₛ Γ`. -/
-inductive WfSpecCtx (Λ : Library) : SpecCtx → Prop
+A specification of `f` is recorded once the body of the declaration `φ` the library maps `f`
+to has been derived for it.  The type arguments `tys` and the argument values `vals` the
+specification speaks of are *well-sized* tuples — `φ.tyArity` types and one value per
+parameter of `φ` — so the body premise is simply the triple for the implementation `φ` gives
+at those types (`FunDecl.concretise`), run with those values (`FunImpl.with`).  The context
+stores the lists those tuples map to. -/
+inductive WfSpecCtx (Λ : Library) : SpecCtx.{u} → Prop
   | empty :
       WfSpecCtx Λ ∅
-  | update {Γ Γ' : SpecCtx} {tt : Tele} {f : Fid} {vals : tt -t> List Val}
-        {P : tt -t> Asrt} {ε : LExit} {Φ : Val → tt -t> Asrt}
-        {xs : List (PVar × Ty)} {body : Expr} {τ : Ty} {safe : Bool} :
-      WfSpecCtx Λ Γ → Γ' = Γ.update ⟨tt, vals, P, ε, Φ⟩ f →
-      Λ.MapsTo f ⟨xs, body, τ, safe⟩ →
-        (Γ ⊢ ⌈P⌉ (body.substSym xs vals) ⌈ε, Φ⌉) →
+  | update {Γ Γ' : SpecCtx} {tt : Tele} {f : Fid} {φ : FunDecl}
+        {tys : TeleLift tt φ.TyArgs} {vals : TeleLift tt φ.ValArgs}
+        {P : SymAsrt tt} {ε : LExit} {Φ : Val → SymAsrt tt} :
+      WfSpecCtx Λ Γ →
+      Γ' = Γ.update ⟨tt, tys.toListLift, vals.toListLift, P, ε, Φ⟩ f →
+      Λ.MapsTo f φ →
+      (Γ ⊢ ⌈P⌉ (SymExpr.body φ tys vals) ⌈ε, Φ⌉) →
       WfSpecCtx Λ Γ'
 @[inherit_doc] scoped infix:50 " ≺ₛ " => WfSpecCtx
 
 /-! ### Soundness of RISL -/
 
 /-- The under-approximate call triple associated to a function specification. -/
-def FunSpec.callTriple (f : String) : (s : FunSpec) → SymTriple s.1
-  | ⟨_, vals, P, ε, Φ⟩ => ⟨P, vals.map (fun vs => .call f (Term.ofVals vs)), ε, Φ⟩
+def FunSpec.callTriple (f : String) : (s : FunSpec.{u}) → SymTriple.{u} s.1
+  | ⟨_, tys, vals, P, ε, Φ⟩ => ⟨P, SymExpr.call f tys vals, ε, Φ⟩
 
 /-- A specification context *never mentions the `lmiss` exit tag*.  Contexts built
 by `WfSpecCtx` enjoy this property, which is what makes the frame rule sound. -/
-def SpecCtxNoMiss (Γ : SpecCtx) : Prop :=
-  ∀ (f : String) (s : FunSpec), s ∈ Γ f → s.exit ≠ .lmiss
+def SpecCtxNoMiss (Γ : SpecCtx.{u}) : Prop :=
+  ∀ (f : String) (s : FunSpec.{u}), s ∈ Γ f → s.exit ≠ .lmiss
 
 /-- A specification context is *semantically sound* when every stored
 specification yields a valid under-approximate call triple. -/
-def SoundSpecCtx (Λ : Library) (Γ : SpecCtx) : Prop :=
-  ∀ (f : String) (s : FunSpec), s ∈ Γ f → UXFrameTriple Λ (s.callTriple f)
+def SoundSpecCtx (Λ : Library) (Γ : SpecCtx.{u}) : Prop :=
+  ∀ (f : String) (s : FunSpec.{u}), s ∈ Γ f → UXFrameTriple Λ (s.callTriple f)
 
-theorem SpecCtxNoMiss.mono {Γ Γ' : SpecCtx}
+theorem SpecCtxNoMiss.mono {Γ Γ' : SpecCtx.{u}}
     (hsub : Γ' [⊆] Γ) (h : SpecCtxNoMiss Γ) : SpecCtxNoMiss Γ' :=
   fun f s hmem => h f s (hsub f hmem)
 
-theorem SoundSpecCtx.mono {Λ : Library} {Γ Γ' : SpecCtx}
+theorem SoundSpecCtx.mono {Λ : Library} {Γ Γ' : SpecCtx.{u}}
     (hsub : Γ' [⊆] Γ) (h : SoundSpecCtx Λ Γ) : SoundSpecCtx Λ Γ' :=
   fun f s hmem => h f s (hsub f hmem)
 
 /-- No RISL derivation over a `lmiss`-free context ends in the `lmiss` tag. -/
-theorem WfSpec.exit_ne_lmiss {Γ : SpecCtx} {tt : Tele} {triple : SymTriple tt}
+theorem WfSpec.exit_ne_lmiss {Γ : SpecCtx.{u}} {tt : Tele.{u + 1}} {triple : SymTriple.{u} tt}
     (h : WfSpec Γ triple) : SpecCtxNoMiss Γ → triple.exit ≠ .lmiss := by
   induction h <;> try tauto
   rename_i hsub _ _ _ _ hmiss
   exact fun h => hmiss (SpecCtxNoMiss.mono hsub h)
 
 /-- A sound call triple can be recovered from a sound body triple. -/
-theorem callTriple_of_body {Λ : Library} {f : String} {xs : List (PVar × Ty)}
-    {body : Expr} {τ : Ty} {safe : Bool} {tt : Tele}
-    {vals : tt -t> List Val} {P : tt -t> Asrt} {ε : LExit} {Φ : Val → tt -t> Asrt}
-    (hmaps : Λ.MapsTo f ⟨xs, body, τ, safe⟩)
-    (hbody : UXFrameTriple Λ ⟨P, body.substSym xs vals, ε, Φ⟩) :
-    UXFrameTriple Λ ⟨P, vals.map (fun l => .call f (Term.ofVals l)), ε, Φ⟩ := by
+theorem callTriple_of_body {Λ : Library} {f : String} {φ : FunDecl}
+    {tt : Tele.{u + 1}} {tys : TeleLift tt φ.TyArgs} {vals : TeleLift tt φ.ValArgs}
+    {P : SymAsrt tt} {ε : LExit} {Φ : Val → SymAsrt tt}
+    (hmaps : Λ.MapsTo f φ)
+    (hbody : UXFrameTriple Λ ⟨P, SymExpr.body φ tys vals, ε, Φ⟩) :
+    UXFrameTriple Λ ⟨P, SymExpr.call f tys.toListLift vals.toListLift, ε, Φ⟩ := by
   intro args v h' hΦ
   obtain ⟨h, hP, εₛ, hε, hstep⟩ := hbody args v h' hΦ
-  rw [teleBind_apply] at hstep
+  rw [SymExpr.body_at] at hstep
   refine ⟨h, hP, εₛ, hε, ?_⟩
-  rw [teleMap_apply]
-  exact .call hmaps hstep
+  rw [SymExpr.call_at, teleLift_at, teleLift_at]
+  exact .call (Λ.instantiates_concretise hmaps (tys.at args)) hstep
 
 /-! #### Soundness of the individual structural proof rules -/
 
 /-- Soundness of the sequencing rule `letIn`. -/
-theorem uxframe_letIn {Λ : Library} {tt : Tele} {x : Binder} {e₁ e₂ : tt -t> Expr}
-    {P : tt -t> Asrt} {ε : LExit} {Φ Φ' : Val → tt -t> Asrt} {v : Val}
+theorem uxFrameTriple_letIn {Λ : Library} {tt : Tele.{u + 1}} {x : Binder} {e₁ e₂ : SymExpr tt}
+    {P : SymAsrt tt} {ε : LExit} {Φ Φ' : Val → SymAsrt tt} {v : TeleLift tt Val}
     (h₁ : UXFrameTriple Λ ⟨P, e₁, .lok, Φ'⟩)
-    (h₂ : UXFrameTriple Λ ⟨Φ' v, e₂.map fun e => e.subst x v, ε, Φ⟩) :
-    UXFrameTriple Λ ⟨P, teleBind fun args =>
-      .letIn x (e₁.apply args) (e₂.apply args), ε, Φ⟩ := by
+    (h₂ : UXFrameTriple Λ ⟨teleBind fun args => (Φ' (v.at args)).apply args,
+      e₂.subst x v, ε, Φ⟩) :
+    UXFrameTriple Λ ⟨P, SymExpr.letIn x e₁ e₂, ε, Φ⟩ := by
   intro args r h' hΦ
   obtain ⟨h'', hΦ', ε₂, hε₂, hstep₂⟩ := h₂ args r h' hΦ
-  obtain ⟨h, hP, ε₁, ⟨⟩, hstep₁⟩ := h₁ args v h'' hΦ'
-  simp_all [teleBind_apply, teleMap_apply]
-  exact ⟨h, hP, .letIn hstep₁ hstep₂⟩
+  rw [teleBind_apply] at hΦ'
+  rw [SymExpr.subst_at] at hstep₂
+  obtain ⟨h, hP, ε₁, ⟨⟩, hstep₁⟩ := h₁ args (v.at args) h'' hΦ'
+  rw [SymExpr.letIn_at]
+  exact ⟨h, hP, ε₂, hε₂, .letIn hstep₁ hstep₂⟩
 
-/-- Soundness of the short-circuiting sequencing rule `letCut`. -/
-theorem uxframe_letCut {Λ : Library} {tt : Tele} {x : Binder} {e₁ e₂ : tt -t> Expr}
-    {P : tt -t> Asrt} {ε : LExit} {Φ : Val → tt -t> Asrt}
+/-- Soundness of the short-circuiting sequencing rule `let_cut`. -/
+theorem uxFrameTriple_let_cut {Λ : Library} {tt : Tele.{u + 1}} {x : Binder} {e₁ e₂ : SymExpr tt}
+    {P : SymAsrt tt} {ε : LExit} {Φ : Val → SymAsrt tt}
     (h : UXFrameTriple Λ ⟨P, e₁, ε, Φ⟩) (hne : ε ≠ .lok) :
-    UXFrameTriple Λ ⟨P, teleBind fun args =>
-      .letIn x (e₁.apply args) (e₂.apply args), ε, Φ⟩ := by
+    UXFrameTriple Λ ⟨P, SymExpr.letIn x e₁ e₂, ε, Φ⟩ := by
   intro args r h' hΦ
   obtain ⟨h, hP, εₛ, hε, hstep⟩ := h args r h' hΦ
-  simp [teleBind_apply]
-  refine' ⟨h, hP, εₛ, hε, FrameStep.letCut hstep _⟩
+  simp [SymExpr.letIn_at]
+  refine' ⟨h, hP, εₛ, hε, FrameStep.let_cut hstep _⟩
   cases ε <;> cases r <;> simp_all [LExit.toExit]
   · intro x; subst hε; simp
   · intro x; subst hε; simp
 
 /-- Soundness of the nondeterministic choice rule `choice`. -/
-theorem uxframe_choice {Λ : Library} {tt : Tele} {eᵢ e₁ e₂ : tt -t> Expr}
-    {P : tt -t> Asrt} {ε : LExit} {Φ : Val → tt -t> Asrt}
+theorem uxFrameTriple_choice {Λ : Library} {tt : Tele.{u + 1}} {eᵢ e₁ e₂ : SymExpr tt}
+    {P : SymAsrt tt} {ε : LExit} {Φ : Val → SymAsrt tt}
     (he : eᵢ = e₁ ∨ eᵢ = e₂) (h : UXFrameTriple Λ ⟨P, eᵢ, ε, Φ⟩) :
-    UXFrameTriple Λ ⟨P, teleBind fun args =>
-      (e₁.apply args).choice (e₂.apply args), ε, Φ⟩ := by
+    UXFrameTriple Λ ⟨P, SymExpr.choice e₁ e₂, ε, Φ⟩ := by
   intro args r h' hΦ
   obtain ⟨h, hP, εₛ, hε, hstep⟩ := h args r h' hΦ
-  simp_all [teleBind_apply]
+  simp_all [SymExpr.choice_at]
   rcases he with ⟨rfl⟩ | ⟨rfl⟩
   · exact ⟨h, hP, .choice hstep (Or.inl rfl)⟩;
   · exact ⟨h, hP, .choice hstep (Or.inr rfl)⟩
 
-/-- Soundness of the frame rule.  This is where the `lmiss`-free assumption is needed: framing a `miss` outcome over a heap that owns the missed location is unsound, but such an outcome cannot occur since `ε ≠ lmiss`. -/
-theorem uxframe_frame {Λ : Library} {tt : Tele} {R : tt -t> Asrt} {e : tt -t> Expr}
-    {P : tt -t> Asrt} {ε : LExit} {Φ : Val → tt -t> Asrt}
+/-- Soundness of the frame rule, for an exit tag other than `lmiss`. -/
+theorem uxFrameTriple_frame {Λ : Library} {tt : Tele.{u + 1}} {R : SymAsrt tt} {e : SymExpr tt}
+    {P : SymAsrt tt} {ε : LExit} {Φ : Val → SymAsrt tt}
     (hne : ε ≠ .lmiss)
     (h : UXFrameTriple Λ ⟨P, e, ε, Φ⟩) :
-    UXFrameTriple Λ ⟨teleBind fun args => P.apply args ∗ R.apply args, e, ε,
-      fun v => teleBind fun args => (Φ v).apply args ∗ R.apply args⟩ := by
+    UXFrameTriple Λ ⟨teleBind fun args => R.apply args ∗ P.apply args, e, ε,
+      fun v => teleBind fun args => R.apply args ∗ (Φ v).apply args⟩ := by
   intro args v h' hΦ
   rw [teleBind_apply] at *
-  obtain ⟨h₁, h₂, rfl, hdisj, ⟨hh₁, hh₂⟩⟩ := hΦ
-  obtain ⟨h₁, hP, εₛ, hε, hstep⟩ := h args v h₁ hh₁
-  obtain ⟨hstepF, hdisj⟩ | ⟨l, rfl, hdom⟩ := frame_addition hstep h₂ hdisj
-  · exact ⟨h₁ ∪ h₂, ⟨h₁, h₂, rfl, hdisj, hP, hh₂⟩, εₛ, hε, hstepF⟩
+  obtain ⟨hR, hpost, rfl, hdisj, ⟨hhR, hhpost⟩⟩ := hΦ
+  obtain ⟨hpre, hP, εₛ, hε, hstep⟩ := h args v hpost hhpost
+  obtain ⟨hstepF, hdisj'⟩ | ⟨l, rfl, hdom⟩ := frame_addition hstep hR hdisj.symm
+  · refine ⟨hR ∪ hpre, ⟨hR, hpre, rfl, hdisj'.symm, hhR, hP⟩, εₛ, hε, ?_⟩
+    rwa [PFun.union_comm hdisj'.symm, PFun.union_comm hdisj]
   · cases ε <;> simp_all [LExit.toExit]
     cases v <;> cases hε
 
 /-- Soundness of the disjunction rule. -/
-theorem uxframe_disj {Λ : Library} {tt : Tele} {e : tt -t> Expr}
-    {P₁ P₂ : tt -t> Asrt} {ε : LExit} {Φ₁ Φ₂ : Val → tt -t> Asrt}
+theorem uxFrameTriple_disj {Λ : Library} {tt : Tele.{u + 1}} {e : SymExpr tt}
+    {P₁ P₂ : SymAsrt tt} {ε : LExit} {Φ₁ Φ₂ : Val → SymAsrt tt}
     (h₁ : UXFrameTriple Λ ⟨P₁, e, ε, Φ₁⟩)
     (h₂ : UXFrameTriple Λ ⟨P₂, e, ε, Φ₂⟩) :
     UXFrameTriple Λ ⟨teleBind fun args => P₁.apply args ∨ₕ P₂.apply args, e, ε,
@@ -294,72 +348,77 @@ theorem uxframe_disj {Λ : Library} {tt : Tele} {e : tt -t> Expr}
     exact ⟨h, Or.inr hP₂, εₛ, hε, hstep⟩
 
 /-- Soundness of the existential rule. -/
-theorem uxframe_ex {Λ : Library} {tt : Tele} {e : tt -t> Expr} {P : tt -t> Asrt}
-    {ε : LExit} {Φ : Val → tt -t> Asrt} {X : Type}
-    (h : UXFrameTriple Λ ⟨P, e, ε, Φ⟩) :
-    UXFrameTriple Λ ⟨teleBind fun args => .ex fun _ : X => P.apply args, e, ε,
-      fun v => teleBind fun args => .ex fun _ : X => (Φ v).apply args⟩ := by
+theorem uxFrameTriple_ex {Λ : Library} {tt : Tele.{u + 1}} {X : Type u} {e : SymExpr tt}
+    {P : SymAsrt (Tele.cons (fun _ : ULift.{u + 1, u} X => tt))} {ε : LExit}
+    {Φ : Val → SymAsrt (Tele.cons (fun _ : ULift.{u + 1, u} X => tt))}
+    (h : UXFrameTriple Λ ⟨P, e.reindex Sigma.snd, ε, Φ⟩) :
+    UXFrameTriple Λ ⟨teleBind fun args => .ex fun x : X => P.apply ⟨.up x, args⟩, e, ε,
+      fun v => teleBind fun args => .ex fun x : X => (Φ v).apply ⟨.up x, args⟩⟩ := by
   intro args v h' hΦ
-  rw [teleBind_apply] at *
+  rw [teleBind_apply] at hΦ
   obtain ⟨x, hx⟩ := hΦ
-  obtain ⟨h, hh, εₛ, hε, hstep⟩ := h args v h' hx;
-  exact ⟨h, ⟨x, hh⟩, εₛ, hε, hstep⟩
+  obtain ⟨h, hh, εₛ, hε, hstep⟩ := h ⟨.up x, args⟩ v h' hx
+  rw [SymExpr.reindex_at] at hstep
+  exact ⟨h, by rw [teleBind_apply]; exact ⟨x, hh⟩, εₛ, hε, hstep⟩
 
 /-- Soundness of the (generalised) consequence rule. -/
-theorem uxframe_cons {Λ : Library} {tt tt' : Tele} {e : tt -t> Expr} {e' : tt' -t> Expr}
-    {P : tt -t> Asrt} {P' : tt' -t> Asrt} {ε : LExit}
-    {Φ : Val → tt -t> Asrt} {Φ' : Val → tt' -t> Asrt}
+theorem uxFrameTriple_cons {Λ : Library} {tt tt' : Tele.{u + 1}} {e : SymExpr tt} {e' : SymExpr tt'}
+    {P : SymAsrt tt} {P' : SymAsrt tt'} {ε : LExit}
+    {Φ : Val → SymAsrt tt} {Φ' : Val → SymAsrt tt'}
     (f : TeleArg tt → TeleArg tt')
     (hpre : ∀ args, ⊨ (P'.apply (f args) →ₕ P.apply args))
     (hpost : ∀ v args, ⊨ (Φ v).apply args →ₕ (Φ' v).apply (f args))
-    (hexpr : ∀ args, e.apply args = e'.apply (f args))
+    (hexpr : ∀ args, e.at args = e'.at (f args))
     (h : UXFrameTriple Λ ⟨P', e', ε, Φ'⟩) :
     UXFrameTriple Λ ⟨P, e, ε, Φ⟩ := by
   intro args v h' hΦ
   obtain ⟨hh, hP', ⟨εₛ, hε, hstep⟩⟩ := h (f args) v h' (hpost v args h' hΦ)
-  exact ⟨hh, hpre args hh hP', εₛ, hε, by simpa only [hexpr] using hstep⟩
+  exact ⟨hh, hpre args hh hP', εₛ, hε, by rw [hexpr args]; exact hstep⟩
 
 /-! #### Soundness of the individual atomic-command proof rules -/
 
 /-- Soundness of the `pure` rule. -/
-theorem uxframe_pure {Λ : Library} :
-    UXFrameTriple (tt := [tele (_ : Pure)]) Λ ⟨fun _ => .emp, fun p => .pure p,
-      .lok, fun r p => ⌞ some r = p.eval ⌟⟩ := by
+theorem uxFrameTriple_pure {Λ : Library} :
+    UXFrameTriple (tt := [tele (_ : Lifted.{u + 1} Pure)]) Λ ⟨fun _ => .emp,
+      fun p => .up (.pure p.down),
+      .lok, fun r p => ⌞ some r = Pure.eval p.down ⌟⟩ := by
   rintro p r h' ⟨rfl, hΦ⟩
   simp_all [TeleFun.apply]
   exact ⟨_, rfl, .pure hΦ.symm⟩
 
 /-- Soundness of the `assume` rule. -/
-theorem uxframe_assume {Λ : Library} :
-    UXFrameTriple (tt := [tele]) Λ ⟨.emp, .assume .true,
+theorem uxFrameTriple_assume {Λ : Library} :
+    UXFrameTriple (tt := [tele]) Λ ⟨.emp, .up (.assume .true),
       .lok, fun r => ⌞ r = .unit ⌟⟩ := by
   rintro args v h' ⟨rfl, rfl⟩
   exact ⟨∅, by tauto, .ok .unit, rfl, .assume⟩
 
 /-- Soundness of the `error` rule. -/
-theorem uxframe_error {Λ : Library} :
-    UXFrameTriple (tt := [tele]) Λ ⟨.emp, .error,
+theorem uxFrameTriple_error {Λ : Library} :
+    UXFrameTriple (tt := [tele]) Λ ⟨.emp, .up .error,
       .lerr, fun r => ⌞ r = .unit ⌟⟩ := by
   rintro args v h' ⟨rfl, rfl⟩
   exact ⟨∅, by tauto, .err, rfl, .error⟩
 
 /-- Soundness of the `alloc` rule. -/
-theorem uxframe_alloc {Λ : Library} :
-    UXFrameTriple (tt := [tele]) Λ ⟨.emp, .alloc (.int 1),
-      .lok, fun r => .ex fun l => ⌞ r = .loc l ⌟ ∗ l ↦?⟩ := by
+theorem uxFrameTriple_alloc {Λ : Library} :
+    UXFrameTriple (tt := [tele]) Λ ⟨.emp, .up (.alloc (.int 1)),
+      .lok, fun r => .ex fun l : Lifted.{u} Loc => ⌞ r = .loc l.down ⌟ ∗ l.down ↦?⟩ := by
   intro r h' h''
   simp [TeleFun.apply]
   rintro x rfl rfl
   exact ⟨_, rfl, .alloc rfl id rfl rfl⟩
 
 /-- Soundness of the `free` rule. -/
-theorem uxframe_free {Λ : Library} :
-    UXFrameTriple (tt := [tele (_ : Loc) (_ : Val)]) Λ
-    ⟨fun l v => l ↦ v, fun l _ => .free (.loc l),
-    .lok, fun r l _ => ⌞ r = .unit ⌟ ∗ l ↦∅⟩ := by
-  intro ⟨l, v', ⟨⟩⟩ v h' hΦ
+theorem uxFrameTriple_free {Λ : Library} :
+    UXFrameTriple
+      (tt := [tele (_ : Lifted.{u + 1} Val) (_ : Lifted.{u + 1} Loc) (_ : Lifted.{u + 1} Val)]) Λ
+    ⟨fun w l v => ⌞ w.down = .loc l.down ⌟ ∗ l.down ↦ v.down,
+    fun w _ _ => .up (.free (.val w.down)),
+    .lok, fun r w l _ => ⌞ w.down = .loc l.down ⌟ ∗ (⌞ r = .unit ⌟ ∗ l.down ↦∅)⟩ := by
+  intro ⟨⟨w⟩, ⟨l⟩, ⟨v'⟩, ⟨⟩⟩ v h' hΦ
   simp_all [TeleFun.apply]
-  refine' ⟨_, rfl, .free rfl ?mapsTo hΦ.2.2 ?iDom ?hFreed⟩
+  refine' ⟨_, rfl, .free rfl ?mapsTo hΦ.2.2.2 ?iDom ?hFreed⟩
   case mapsTo =>
     simp [Heap.MapsTo, PFun.singleton]
     exact ⟨rfl, rfl⟩
@@ -368,14 +427,15 @@ theorem uxframe_free {Λ : Library} :
   case hFreed =>
     simp only [PFun.singleton, Heap.free, Heap.update, PFun.insert_insert_self]
 
-/-- Soundness of the `freeUninit` rule. -/
-theorem uxframe_freeUninit {Λ : Library} :
-    UXFrameTriple (tt := [tele (_ : Loc)]) Λ
-      ⟨fun l => l ↦?, fun l => .free (.loc l),
-      .lok, fun r l => ⌞ r = .unit ⌟ ∗ l ↦∅⟩ := by
-  intro ⟨l, ⟨⟩⟩ r h' hΦ
+/-- Soundness of the `free_uninit` rule. -/
+theorem uxFrameTriple_free_uninit {Λ : Library} :
+    UXFrameTriple (tt := [tele (_ : Lifted.{u + 1} Val) (_ : Lifted.{u + 1} Loc)]) Λ
+      ⟨fun w l => ⌞ w.down = .loc l.down ⌟ ∗ l.down ↦?,
+      fun w _ => .up (.free (.val w.down)),
+      .lok, fun r w l => ⌞ w.down = .loc l.down ⌟ ∗ (⌞ r = .unit ⌟ ∗ l.down ↦∅)⟩ := by
+  intro ⟨⟨w⟩, ⟨l⟩, ⟨⟩⟩ r h' hΦ
   simp_all [TeleFun.apply]
-  refine' ⟨_, rfl, .free rfl ?mapsTo hΦ.2.2 ?iDom ?hFreed⟩
+  refine' ⟨_, rfl, .free rfl ?mapsTo hΦ.2.2.2 ?iDom ?hFreed⟩
   case mapsTo =>
     simp [Heap.MapsTo, PFun.singleton]
     exact ⟨rfl, rfl⟩
@@ -384,21 +444,25 @@ theorem uxframe_freeUninit {Λ : Library} :
   case hFreed =>
     simp only [PFun.singleton, Heap.free, Heap.update, PFun.insert_insert_self]
 
-/-- Soundness of the `freeFreed` rule. -/
-theorem uxframe_freeFreed {Λ : Library} :
-    UXFrameTriple (tt := [tele (_ : Loc)]) Λ
-      ⟨fun l => l ↦∅, fun l => .free (.loc l), .lerr,
-      fun r l => ⌞ r = .unit ⌟ ∗ l ↦∅⟩ := by
-  intro ⟨l, ⟨⟩⟩ r h' hΦ
+/-- Soundness of the `free_freed` rule. -/
+theorem uxFrameTriple_free_freed {Λ : Library} :
+    UXFrameTriple (tt := [tele (_ : Lifted.{u + 1} Val) (_ : Lifted.{u + 1} Loc)]) Λ
+      ⟨fun w l => ⌞ w.down = .loc l.down ⌟ ∗ l.down ↦∅,
+      fun w _ => .up (.free (.val w.down)), .lerr,
+      fun r w l => ⌞ w.down = .loc l.down ⌟ ∗ (⌞ r = .unit ⌟ ∗ l.down ↦∅)⟩ := by
+  intro ⟨⟨w⟩, ⟨l⟩, ⟨⟩⟩ r h' hΦ
   simp_all [TeleFun.apply]
-  exact ⟨_, rfl, .freeErr rfl (by simp [Heap.MapsTo, PFun.singleton])⟩
+  exact ⟨_, rfl, .free_err rfl (by simp [Heap.MapsTo, PFun.singleton])⟩
 
 /-- Soundness of the `store` rule. -/
-theorem uxframe_store {Λ : Library} :
-    UXFrameTriple (tt := [tele (_ : Loc) (_ : Val) (_ : Val)]) Λ
-      ⟨fun l _ v' => l ↦ v', fun l v _ => .store (.loc l) (.val v),
-      .lok, fun r l v _ => ⌞ r = .unit ⌟ ∗ l ↦ v⟩ := by
-  intro ⟨l, v, v', ⟨⟩⟩ r h' hΦ
+theorem uxFrameTriple_store {Λ : Library} :
+    UXFrameTriple
+      (tt := [tele (_ : Lifted.{u + 1} Val) (_ : Lifted.{u + 1} Loc) (_ : Lifted.{u + 1} Val)
+        (_ : Lifted.{u + 1} Val)]) Λ
+      ⟨fun w l _ v' => ⌞ w.down = .loc l.down ⌟ ∗ l.down ↦ v'.down,
+      fun w _ v _ => .up (.store (.val w.down) (.val v.down)),
+      .lok, fun r w l v _ => ⌞ w.down = .loc l.down ⌟ ∗ (⌞ r = .unit ⌟ ∗ l.down ↦ v.down)⟩ := by
+  intro ⟨⟨w⟩, ⟨l⟩, ⟨v⟩, ⟨v'⟩, ⟨⟩⟩ r h' hΦ
   simp_all [TeleFun.apply]
   refine' ⟨_, rfl, .store rfl rfl ?mapsTo ?iDom ?vStored⟩
   case mapsTo =>
@@ -410,12 +474,14 @@ theorem uxframe_store {Λ : Library} :
     simp only [hΦ.2.2, Heap.store, Heap.update, BlockHeap.update,
       PFun.singleton, PFun.insert_insert_self]
 
-/-- Soundness of the `storeUninit` rule. -/
-theorem uxframe_storeUninit {Λ : Library} :
-    UXFrameTriple (tt := [tele (_ : Loc) (_ : Val)]) Λ
-      ⟨fun l _ => l ↦?, fun l v => .store (.loc l) (.val v),
-      .lok, fun r l v => ⌞ r = .unit ⌟ ∗ l ↦ v⟩ := by
-  intro ⟨l, v, ⟨⟩⟩ r h' hΦ
+/-- Soundness of the `store_uninit` rule. -/
+theorem uxFrameTriple_store_uninit {Λ : Library} :
+    UXFrameTriple
+      (tt := [tele (_ : Lifted.{u + 1} Val) (_ : Lifted.{u + 1} Loc) (_ : Lifted.{u + 1} Val)]) Λ
+      ⟨fun w l _ => ⌞ w.down = .loc l.down ⌟ ∗ l.down ↦?,
+      fun w _ v => .up (.store (.val w.down) (.val v.down)),
+      .lok, fun r w l v => ⌞ w.down = .loc l.down ⌟ ∗ (⌞ r = .unit ⌟ ∗ l.down ↦ v.down)⟩ := by
+  intro ⟨⟨w⟩, ⟨l⟩, ⟨v⟩, ⟨⟩⟩ r h' hΦ
   simp_all [TeleFun.apply]
   refine' ⟨_, rfl, .store rfl rfl ?mapsTo ?iDom ?vStored⟩
   case mapsTo =>
@@ -427,21 +493,25 @@ theorem uxframe_storeUninit {Λ : Library} :
     simp only [hΦ.2.2, Heap.store, Heap.update, BlockHeap.update,
       PFun.singleton, PFun.insert_insert_self]
 
-/-- Soundness of the `storeFreed` rule. -/
-theorem uxframe_storeFreed {Λ : Library} :
-    UXFrameTriple (tt := [tele (_ : Loc) (_ : Val)]) Λ
-      ⟨fun l _ => l ↦∅, fun l v => .store (.loc l) (.val v),
-      .lerr, fun r l _ => ⌞ r = .unit ⌟ ∗ l ↦∅⟩ := by
-  intro ⟨l, v, _⟩ r h' hΦ
+/-- Soundness of the `store_freed` rule. -/
+theorem uxFrameTriple_store_freed {Λ : Library} :
+    UXFrameTriple
+      (tt := [tele (_ : Lifted.{u + 1} Val) (_ : Lifted.{u + 1} Loc) (_ : Lifted.{u + 1} Val)]) Λ
+      ⟨fun w l _ => ⌞ w.down = .loc l.down ⌟ ∗ l.down ↦∅,
+      fun w _ v => .up (.store (.val w.down) (.val v.down)),
+      .lerr, fun r w l _ => ⌞ w.down = .loc l.down ⌟ ∗ (⌞ r = .unit ⌟ ∗ l.down ↦∅)⟩ := by
+  intro ⟨⟨w⟩, ⟨l⟩, ⟨v⟩, _⟩ r h' hΦ
   simp_all [TeleFun.apply]
-  exact ⟨_, rfl, .storeErr rfl (by simp [Heap.MapsTo, PFun.singleton])⟩
+  exact ⟨_, rfl, .store_err rfl (by simp [Heap.MapsTo, PFun.singleton])⟩
 
 /-- Soundness of the `load` rule. -/
-theorem uxframe_load {Λ : Library} :
-    UXFrameTriple (tt := [tele (_ : Loc) (_ : Val)]) Λ
-      ⟨fun l v => l ↦ v, fun l _ => .load (.loc l), .lok,
-      fun r l v => ⌞ r = v ⌟ ∗ l ↦ v⟩ := by
-  intro ⟨l, v', ⟨⟩⟩ v h' hΦ
+theorem uxFrameTriple_load {Λ : Library} :
+    UXFrameTriple
+      (tt := [tele (_ : Lifted.{u + 1} Val) (_ : Lifted.{u + 1} Loc) (_ : Lifted.{u + 1} Val)]) Λ
+      ⟨fun w l v => ⌞ w.down = .loc l.down ⌟ ∗ l.down ↦ v.down,
+      fun w _ _ => .up (.load (.val w.down)), .lok,
+      fun r w l v => ⌞ w.down = .loc l.down ⌟ ∗ (⌞ r = v.down ⌟ ∗ l.down ↦ v.down)⟩ := by
+  intro ⟨⟨w⟩, ⟨l⟩, ⟨v'⟩, ⟨⟩⟩ v h' hΦ
   simp_all [TeleFun.apply]
   refine' ⟨_, rfl, .load rfl ?mapsTo ?vLoaded⟩
   case mapsTo =>
@@ -450,65 +520,68 @@ theorem uxframe_load {Λ : Library} :
   case vLoaded =>
     simp [BlockHeap.MapsTo, hΦ.2.2]
 
-/-- Soundness of the `loadUninit` rule. -/
-theorem uxframe_loadUninit {Λ : Library} :
-    UXFrameTriple (tt := [tele (_ : Loc)]) Λ
-      ⟨fun l => l ↦?, fun l => .load (.loc l), .lerr,
-      fun r l => ⌞ r = .unit ⌟ ∗ l ↦?⟩ := by
-  intro ⟨l, ⟨⟩⟩ v h' hΦ
+/-- Soundness of the `load_uninit` rule. -/
+theorem uxFrameTriple_load_uninit {Λ : Library} :
+    UXFrameTriple (tt := [tele (_ : Lifted.{u + 1} Val) (_ : Lifted.{u + 1} Loc)]) Λ
+      ⟨fun w l => ⌞ w.down = .loc l.down ⌟ ∗ l.down ↦?,
+      fun w _ => .up (.load (.val w.down)), .lerr,
+      fun r w l => ⌞ w.down = .loc l.down ⌟ ∗ (⌞ r = .unit ⌟ ∗ l.down ↦?)⟩ := by
+  intro ⟨⟨w⟩, ⟨l⟩, ⟨⟩⟩ v h' hΦ
   simp_all [TeleFun.apply]
-  refine' ⟨_, rfl, .loadErrBlock rfl ?mapsTo ?vLoaded⟩
+  refine' ⟨_, rfl, .load_err_block rfl ?mapsTo ?vLoaded⟩
   case mapsTo =>
     simp [Heap.MapsTo, PFun.singleton]
     exact ⟨rfl, rfl⟩
   case vLoaded =>
     simp [BlockHeap.MapsTo, hΦ.2.2]
 
-/-- Soundness of the `loadFreed` rule. -/
-theorem uxframe_loadFreed {Λ : Library} :
-    UXFrameTriple (tt := [tele (_ : Loc)]) Λ
-      ⟨fun l => l ↦∅, fun l => .load (.loc l), .lerr,
-      fun r l => ⌞ r = .unit ⌟ ∗ l ↦∅⟩ := by
-  intro ⟨l, ⟨⟩⟩ v h' hΦ
+/-- Soundness of the `load_freed` rule. -/
+theorem uxFrameTriple_load_freed {Λ : Library} :
+    UXFrameTriple (tt := [tele (_ : Lifted.{u + 1} Val) (_ : Lifted.{u + 1} Loc)]) Λ
+      ⟨fun w l => ⌞ w.down = .loc l.down ⌟ ∗ l.down ↦∅,
+      fun w _ => .up (.load (.val w.down)), .lerr,
+      fun r w l => ⌞ w.down = .loc l.down ⌟ ∗ (⌞ r = .unit ⌟ ∗ l.down ↦∅)⟩ := by
+  intro ⟨⟨w⟩, ⟨l⟩, ⟨⟩⟩ v h' hΦ
   simp_all [TeleFun.apply]
-  exact ⟨_, rfl, .loadErr rfl (by simp [Heap.MapsTo, PFun.singleton])⟩
+  exact ⟨_, rfl, .load_err rfl (by simp [Heap.MapsTo, PFun.singleton])⟩
 
 /-- Soundness of the RISL proof rules relative to a sound, `lmiss`-free
 specification context. -/
-theorem WfSpec.sound {Λ : Library} {tt : Tele} {Γ : SpecCtx} {triple : SymTriple tt}
+theorem WfSpec.sound {Λ : Library} {tt : Tele.{u + 1}} {Γ : SpecCtx.{u}}
+    {triple : SymTriple.{u} tt}
     (h : WfSpec Γ triple) :
     SpecCtxNoMiss Γ → SoundSpecCtx Λ Γ → UXFrameTriple Λ triple := by
   induction h with
-  | pure => exact fun _ _ => uxframe_pure
-  | assume => exact fun _ _ => uxframe_assume
-  | error => exact fun _ _ => uxframe_error
-  | letIn h₁ h₂ ih₁ ih₂ => exact fun hnm hΓ => uxframe_letIn (ih₁ hnm hΓ) (ih₂ hnm hΓ)
-  | letCut h hne ih => exact fun hnm hΓ => uxframe_letCut (ih hnm hΓ) hne
-  | choice he h ih => exact fun hnm hΓ => uxframe_choice he (ih hnm hΓ)
-  | alloc => exact fun _ _ => uxframe_alloc
-  | free => exact fun _ _ => uxframe_free
-  | freeUninit => exact fun _ _ => uxframe_freeUninit
-  | freeFreed => exact fun _ _ => uxframe_freeFreed
-  | store => exact fun _ _ => uxframe_store
-  | storeUninit => exact fun _ _ => uxframe_storeUninit
-  | storeFreed => exact fun _ _ => uxframe_storeFreed
-  | load => exact fun _ _ => uxframe_load
-  | loadUninit => exact fun _ _ => uxframe_loadUninit
-  | loadFreed => exact fun _ _ => uxframe_loadFreed
-  | frame h ih => exact fun hnm hΓ => uxframe_frame (h.exit_ne_lmiss hnm) (ih hnm hΓ)
-  | disj h₁ h₂ ih₁ ih₂ => exact fun hnm hΓ => uxframe_disj (ih₁ hnm hΓ) (ih₂ hnm hΓ)
+  | pure => exact fun _ _ => uxFrameTriple_pure
+  | assume => exact fun _ _ => uxFrameTriple_assume
+  | error => exact fun _ _ => uxFrameTriple_error
+  | letIn h₁ h₂ ih₁ ih₂ => exact fun hnm hΓ => uxFrameTriple_letIn (ih₁ hnm hΓ) (ih₂ hnm hΓ)
+  | let_cut h hne ih => exact fun hnm hΓ => uxFrameTriple_let_cut (ih hnm hΓ) hne
+  | choice he h ih => exact fun hnm hΓ => uxFrameTriple_choice he (ih hnm hΓ)
+  | alloc => exact fun _ _ => uxFrameTriple_alloc
+  | free => exact fun _ _ => uxFrameTriple_free
+  | free_uninit => exact fun _ _ => uxFrameTriple_free_uninit
+  | free_freed => exact fun _ _ => uxFrameTriple_free_freed
+  | store => exact fun _ _ => uxFrameTriple_store
+  | store_uninit => exact fun _ _ => uxFrameTriple_store_uninit
+  | store_freed => exact fun _ _ => uxFrameTriple_store_freed
+  | load => exact fun _ _ => uxFrameTriple_load
+  | load_uninit => exact fun _ _ => uxFrameTriple_load_uninit
+  | load_freed => exact fun _ _ => uxFrameTriple_load_freed
+  | frame h ih => exact fun hnm hΓ => uxFrameTriple_frame (h.exit_ne_lmiss hnm) (ih hnm hΓ)
+  | disj h₁ h₂ ih₁ ih₂ => exact fun hnm hΓ => uxFrameTriple_disj (ih₁ hnm hΓ) (ih₂ hnm hΓ)
   | cons f hsub hpre hpost hexpr h ih =>
       exact fun hnm hΓ =>
-        uxframe_cons f hpre hpost hexpr (ih (hnm.mono hsub) (hΓ.mono hsub))
-  | ex h ih => exact fun hnm hΓ => uxframe_ex (ih hnm hΓ)
+        uxFrameTriple_cons f hpre hpost hexpr (ih (hnm.mono hsub) (hΓ.mono hsub))
+  | ex h ih => exact fun hnm hΓ => uxFrameTriple_ex (ih hnm hΓ)
   | call hmem => exact fun _ hΓ => hΓ _ _ hmem
 
 /-- Soundness of well-formed specification contexts: they are both `lmiss`-free and semantically sound. -/
-theorem WfSpecCtx.sound {Λ : Library} {Γ : SpecCtx} (h : Λ ≺ₛ Γ) :
+theorem WfSpecCtx.sound {Λ : Library} {Γ : SpecCtx.{u}} (h : Λ ≺ₛ Γ) :
     SpecCtxNoMiss Γ ∧ SoundSpecCtx Λ Γ := by
-  induction h
-  · simp [SpecCtxNoMiss, SoundSpecCtx]
-  · rename_i f _ _ _ _ _ _ _ _ _ _ hmaps hspec hctx
+  induction h with
+  | empty => simp [SpecCtxNoMiss, SoundSpecCtx]
+  | @update _ _ _ f _ _ _ _ _ _ _ _ hmaps hspec hctx =>
     obtain ⟨hmiss, hctx⟩ := hctx
     simp_all [SpecCtxNoMiss, SoundSpecCtx]
     refine ⟨?_, ?_⟩ <;> intro f' s hin <;>
@@ -525,13 +598,17 @@ theorem WfSpecCtx.sound {Λ : Library} {Γ : SpecCtx} (h : Λ ≺ₛ Γ) :
       · exact callTriple_of_body hmaps (hspec.sound hmiss hctx)
       · exact hctx _ _ hin
 
-/-- RISL instantiated as a sound UX logic for the refutation algorithm
-(`risl`). -/
+/-! ### RISL as a logic -/
+
+/-- RISL as a UX logic. -/
 def risl : Logic where
   DerivableSpec Λ triple := ∃ Γ, Λ ≺ₛ Γ ∧ WfSpec Γ triple
-  ux_frame_soundness := by
-    intro tt Λ triple ⟨Γ, hctx, hwf⟩
-    obtain ⟨hnm, hsound⟩ := hctx.sound
-    exact hwf.sound hnm hsound
+
+/-- RISL is a sound logic: every triple it derives is an under-approximate triple of the
+instrumented semantics. -/
+theorem risl_sound : risl.Sound := by
+  intro tt Λ triple ⟨Γ, hctx, hwf⟩
+  obtain ⟨hnm, hsound⟩ := hctx.sound
+  exact hwf.sound hnm hsound
 
 end RUXt
