@@ -32,19 +32,19 @@ symbolic values, bundled with its type arity.  This is what a library maps a fun
 identifier to. -/
 structure FunDecl where
   /-- The number of type parameters of the declaration. -/
-  tyArity : ℕ
+  arity : ℕ
   /-- The underlying symbolic function template.  Its parameter and result type constructors
-  refer to the `tyArity` type parameters directly, by index: the parameter of
+  refer to the `arity` type parameters directly, by index: the parameter of
   `fst<T₀, T₁>(p : Pair<T₀, T₁>) -> T₀` carries the type constructor
   `.custom "Pair" [.param 0, .param 1]`, and its result carries `.param 0`. -/
-  template : FunTempl [tele] tyArity
+  template : FunTempl [tele] arity
 
-instance (φ : FunDecl) : CoeDep FunDecl φ (FunTempl [tele] φ.tyArity) :=
+instance (φ : FunDecl) : CoeDep FunDecl φ (FunTempl [tele] φ.arity) :=
   ⟨φ.template⟩
 
 namespace FunDecl
-/-- The tuple of type arguments of a template: exactly `tyArity` types. -/
-abbrev TyArgs (φ : FunDecl) : Type := RUXt.TyArgs φ.tyArity
+/-- The tuple of type arguments of a template: exactly `arity` types. -/
+abbrev TyArgs (φ : FunDecl) : Type := RUXt.TyArgs φ.arity
 /-- The number of type parameters the result type constructor of a template uses.  It may be
 lower than, equal to or greater than the type arity of the template. -/
 abbrev resArity (φ : FunDecl) : ℕ := φ.template.ty.arity
@@ -52,10 +52,10 @@ abbrev resArity (φ : FunDecl) : ℕ := φ.template.ty.arity
 def concretise (φ : FunDecl) (tyargs : φ.TyArgs) : FunImpl :=
   φ.template.concretise PUnit.unit tyargs
 /-- The number of parameters of a declaration. -/
-abbrev arity (φ : FunDecl) : ℕ := φ.template.params.length
+abbrev valArity (φ : FunDecl) : ℕ := φ.template.valArity
 /-- The tuple of argument values a declaration is called with: exactly one value per
 parameter. -/
-abbrev ValArgs (φ : FunDecl) : Type := RUXt.ValArgs φ.arity
+abbrev ValArgs (φ : FunDecl) : Type := RUXt.ValArgs φ.valArity
 /-- The parameter names of a template. -/
 def paramNames (φ : FunDecl) : List PVar :=
   φ.template.paramNames
@@ -151,16 +151,16 @@ of the parameters of the template at the very same type arguments. -/
   FunTempl.sig_map_snd
 
 /-- Instantiation succeeds at the right number of type arguments. -/
-theorem instantiate_eq_some (φ : FunDecl) {τs : List Ty} (h : τs.length = φ.tyArity) :
-    φ.instantiate τs = some (φ.concretise (TyArgs.ofListPad φ.tyArity τs)) :=
+theorem instantiate_eq_some (φ : FunDecl) {τs : List Ty} (h : τs.length = φ.arity) :
+    φ.instantiate τs = some (φ.concretise (TyArgs.ofListPad φ.arity τs)) :=
   φ.template.instantiate_eq_some PUnit.unit h
 /-- Instantiation fails when the number of type arguments is wrong. -/
 theorem instantiate_eq_none_of_arity (φ : FunDecl) (τs : List Ty)
-    (h : τs.length ≠ φ.tyArity) : φ.instantiate τs = none :=
+    (h : τs.length ≠ φ.arity) : φ.instantiate τs = none :=
   φ.template.instantiate_eq_none PUnit.unit h
 /-- Instantiation succeeds only at the right number of type arguments. -/
 theorem length_of_instantiate {φ : FunDecl} {τs : List Ty} {γ : FunImpl}
-    (h : φ.instantiate τs = some γ) : τs.length = φ.tyArity :=
+    (h : φ.instantiate τs = some γ) : τs.length = φ.arity :=
   FunTempl.length_of_instantiate h
 /-- Instantiating at the list of a tuple of type arguments is concretising at that tuple. -/
 @[simp] theorem instantiate_toList (φ : FunDecl) (tyargs : φ.TyArgs) :
@@ -170,7 +170,7 @@ theorem length_of_instantiate {φ : FunDecl} {τs : List Ty} {γ : FunImpl}
 arguments. -/
 theorem eq_concretise_of_instantiate {φ : FunDecl} {τs : List Ty} {γ : FunImpl}
     (h : φ.instantiate τs = some γ) :
-    τs.length = φ.tyArity ∧ γ = φ.concretise (TyArgs.ofListPad φ.tyArity τs) :=
+    τs.length = φ.arity ∧ γ = φ.concretise (TyArgs.ofListPad φ.arity τs) :=
   FunTempl.eq_concretise_of_instantiate h
 /-- A successful instantiation is a concretisation, at *some* tuple of type arguments. -/
 theorem exists_concretise_of_instantiate {φ : FunDecl} {τs : List Ty} {γ : FunImpl}

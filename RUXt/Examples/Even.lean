@@ -127,8 +127,8 @@ theorem tryRefute_even : evenLib.TryRefute risl semSolver (SummCtx.base evenLib)
     exact ⟨rfl, rfl⟩
   case derivPost =>
     -- Select RISL as our logic for executing the function call
-    refine ⟨SpecCtx.fromPicks ςs1 "new" evenLib newDecl.tyArity .lok evenPost,
-      ⟨.update (φ := newDecl) (tys := ςs1.callTyArgs 0) (vals := ςs1.callValArgs evenLib 0)
+    refine ⟨SpecCtx.fromPicks ςs1 "new" newDecl.arity .lok evenPost,
+      ⟨.update (φ := newDecl) (tys := ςs1.callTyArgs 0) (vals := ςs1.callValArgs 0)
         .empty rfl evenLib_new ?_, ?_⟩⟩
     -- Prove triple for the function body
     · refine .cons id (fun _ => List.Subset.refl _) ?pre (fun _ _ _ h => h)
@@ -146,7 +146,7 @@ theorem tryRefute_even : evenLib.TryRefute risl semSolver (SummCtx.base evenLib)
         HValid, hProp_implies, hProp_star, Summary.base_ownedAt_int]
       exact fun _ h => h
     -- The merged call is an instance of the `call` rule
-    · exact wfSpec_mergeCall ςs1 "new" evenLib newDecl.tyArity .lok evenPost
+    · exact wfSpec_mergeCall ςs1 "new" newDecl.arity .lok evenPost
         (by simp [SpecCtx.update_apply])
 
 /-! ### Iteration 2 of the refutation procedure: `succ` Ok execution -/
@@ -196,8 +196,8 @@ theorem tryRefute_odd : evenLib.TryRefute risl semSolver evenCtx (.inl (.even, o
     exact ⟨rfl, rfl⟩
   case derivPost =>
     -- Select RISL as our logic for executing the function call
-    refine ⟨SpecCtx.fromPicks ςs2 "succ" evenLib succDecl.tyArity .lok oddPost,
-      ⟨.update (φ := succDecl) (tys := ςs2.callTyArgs 0) (vals := ςs2.callValArgs evenLib 0)
+    refine ⟨SpecCtx.fromPicks ςs2 "succ" succDecl.arity .lok oddPost,
+      ⟨.update (φ := succDecl) (tys := ςs2.callTyArgs 0) (vals := ςs2.callValArgs 0)
         .empty rfl evenLib_succ ?_, ?_⟩⟩
     -- Prove triple for the function body
     · refine .cons id (fun _ => List.Subset.refl _) ?pre (fun _ _ _ h => h)
@@ -216,7 +216,7 @@ theorem tryRefute_odd : evenLib.TryRefute risl semSolver evenCtx (.inl (.even, o
         (FunDecl.hProp_summary_ownedAt newDecl "new" ςs1 evenSubv
           _ _ _).mpr hp, hq⟩
     -- The merged call is an instance of the `call` rule
-    · exact wfSpec_mergeCall ςs2 "succ" evenLib succDecl.tyArity .lok oddPost
+    · exact wfSpec_mergeCall ςs2 "succ" succDecl.arity .lok oddPost
         (by simp [SpecCtx.update_apply])
 
 /-! ### Iteration 3 of the refutation procedure: `noop` Err execution -/
@@ -279,8 +279,8 @@ theorem tryRefute_noop : evenLib.TryRefute risl semSolver oddCtx (.inr sourceExp
     exact ⟨rfl, rfl⟩
   case derivPost =>
     -- Select RISL as our logic for executing the function call
-    refine ⟨SpecCtx.fromPicks ςs3 "noop" evenLib noopDecl.tyArity .lerr noopPost,
-      ⟨.update (φ := noopDecl) (tys := ςs3.callTyArgs 0) (vals := ςs3.callValArgs evenLib 0)
+    refine ⟨SpecCtx.fromPicks ςs3 "noop" noopDecl.arity .lerr noopPost,
+      ⟨.update (φ := noopDecl) (tys := ςs3.callTyArgs 0) (vals := ςs3.callValArgs 0)
         .empty rfl evenLib_noop ?_, ?_⟩⟩
     -- Prove triple for the function body
     · refine .cons id (fun _ => List.Subset.refl _) ?pre (fun _ _ _ h => h)
@@ -331,7 +331,7 @@ theorem tryRefute_noop : evenLib.TryRefute risl semSolver oddCtx (.inr sourceExp
       case consEmp => exact fun _ => hValid_star_emp_left _
       case consUnit => exact fun _ _ hh => ⟨hh, rfl⟩
     -- The merged call is an instance of the `call` rule
-    · exact wfSpec_mergeCall ςs3 "noop" evenLib noopDecl.tyArity .lerr noopPost
+    · exact wfSpec_mergeCall ςs3 "noop" noopDecl.arity .lerr noopPost
         (by simp [SpecCtx.update_apply])
 
 /-! ### Well-formed summary context and inadequacy -/

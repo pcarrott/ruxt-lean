@@ -47,7 +47,7 @@ def tripleTele (ςs : Picks) : Tele :=
 arguments `args` of the telescope of the call and typed subvariants `S` for the type parameters
 of the function followed by the free ones of the picked summaries.  Each summary is given its
 result value, its symbolic values, its typed subvariants and its input values. -/
-def merge (Λ : Library) {X : Type _} (x : X)
+def merge {X : Type _} (x : X)
     (f : (ς : Summary) → Val → TeleArg ς.src.teleOf → SubvArgs.{0} ς.src.arity →
       TeleArg (.uniform Val ς.valArity) → X → X) {arity : ℕ} :
     (ςs : Picks) → SubvArgs.{0} (arity + ςs.freeArity) → TeleArg ςs.tripleTele → X
@@ -71,19 +71,19 @@ def merge (Λ : Library) {X : Type _} (x : X)
         -- The remaining summaries read `T` without the subvariants the head one consumed
         (subvs, ς.src.dropSubvArgs T τ.params |>.appendUniform F)
       -- Fold over the remaining summaries, then apply `f` to the head summary
-      ςs.merge Λ x f S (syms.snd |>.app rets |>.app vals) |> f ς v syms.fst subvs rs
+      ςs.merge x f S (syms.snd |>.app rets |>.app vals) |> f ς v syms.fst subvs rs
 
 /-- The precondition of the call: the separating conjunction of the postconditions of the
 picked summaries, each at its own arguments. -/
-def mergeOwned (ςs : Picks) (Λ : Library) (arity : ℕ) :
+def mergeOwned {arity : ℕ} (ςs : Picks) :
     PolyAsrt (arity + ςs.freeArity) ςs.tripleTele := polyAsrt fun args S =>
-  (ςs.merge Λ .emp fun ς r vs subvs rs P => ς.ownedAt r (vs.app rs) subvs ∗ P) S args
+  (ςs.merge .emp fun ς r vs subvs rs P => ς.ownedAt r (vs.app rs) subvs ∗ P) S args
 
 /-- The program of the call: `f` at the types of the typed subvariants of its type parameters,
 on the results of the picked summaries. -/
-def mergeCall (ςs : Picks) (f : Fid) (Λ : Library) (arity : ℕ) :
+def mergeCall {arity : ℕ} (ςs : Picks) (f : Fid) :
     PolyExpr (arity + ςs.freeArity) ςs.tripleTele := polyExpr fun args S =>
-  .call f S.tys.tyParams (Term.ofVals (ςs.merge Λ [] (fun _ r _ _ _ rs => r :: rs) S args))
+  .call f S.tys.tyParams (Term.ofVals (ςs.merge [] (fun _ r _ _ _ rs => r :: rs) S args))
 
 /-- A postcondition of the call on the picked summaries, over the telescope of the call. -/
 abbrev DerivedPost (ςs : Picks) (arity : ℕ) : Type 1 :=
@@ -93,7 +93,7 @@ abbrev DerivedPost (ςs : Picks) (arity : ℕ) : Type 1 :=
 `L`: the triple from `mergeOwned` through `mergeCall` to `Ψ` is derivable. -/
 def DerivableCall (ςs : Picks) (L : Logic.{0}) (Λ : Library) (f : Fid)
     {arity : ℕ} (ε : LExit) (Ψ : ςs.DerivedPost arity) : Prop :=
-  L.DerivableSpec Λ ⟨ςs.mergeOwned Λ arity, ςs.mergeCall f Λ arity, ε, Ψ⟩
+  L.DerivableSpec Λ ⟨ςs.mergeOwned, ςs.mergeCall f, ε, Ψ⟩
 
 end Picks
 
@@ -112,19 +112,19 @@ summaries `ςs`: the picked sources let-bound, one per parameter of `φ`, in fro
 parameters those of `φ` followed by the free ones of the picked sources. -/
 def callSource (φ : FunDecl) (f : Fid) (ςs : Picks) : Source where
   teleOf := ςs.teleOf
-  arity := φ.tyArity + ςs.freeArity
+  arity := φ.arity + ςs.freeArity
   fn :=
     -- Bound the lengths of all names of `φ` and of the picked sources
     let m := max (maxNameLen φ.template.paramNames)
       (List.foldr (fun s => max (maxNameLen s.fn.paramNames)) 0 ςs.srcs)
     -- The parameters are those the picked sources contribute, renamed apart
-    { params := boundParams m φ.template.paramCons φ.tyArity ςs.srcs
+    { params := boundParams m φ.template.paramCons φ.arity ςs.srcs
       -- The result type constructor is that of `φ`
       ty := φ.template.ty
       safe := .true
       body := teleBind fun args => teleBind fun types =>
         -- Cut out the free type arguments
-        let free := types.block .unit φ.tyArity ςs.freeArity
+        let free := types.block .unit φ.arity ςs.freeArity
         -- Call `f` on the parameters of `φ`
         let call := Expr.call f (TyArgs.tyParams types) (Term.ofVars φ.template.paramNames)
         -- Let-bind the picked sources to those parameters in front of the call
@@ -136,12 +136,12 @@ def callSource (φ : FunDecl) (f : Fid) (ςs : Picks) : Source where
 symbolic values and input values, with the type parameters of `φ` followed by the free ones of
 the picked summaries. -/
 abbrev Subvariant (φ : FunDecl) (ςs : Picks) : Type 1 :=
-  Val → PolyAsrt.{0} (φ.tyArity + ςs.freeArity)
+  Val → PolyAsrt.{0} (φ.arity + ςs.freeArity)
     (ςs.teleOf.app (.uniform Val ςs.valArity))
 
 /-- A subvariant of the shape of a call, as a plain subvariant. -/
 @[coe] def Subvariant.toSubvariant {φ : FunDecl} {ςs : Picks} (Ψ' : φ.Subvariant ςs) :
-    RUXt.Subvariant := ⟨ςs.teleOf, ςs.valArity, φ.tyArity + ςs.freeArity, Ψ'⟩
+    RUXt.Subvariant := ⟨ςs.teleOf, ςs.valArity, φ.arity + ςs.freeArity, Ψ'⟩
 
 set_option synthInstance.checkSynthOrder false in
 /-- A subvariant of the shape of a call is implicitly a plain subvariant. -/
@@ -154,7 +154,7 @@ end FunDecl
 the solver `Θ` reports `Φ` as a simplification of `Ψ` with the input values of the call
 existentially bound. -/
 def Picks.DerivedPost.SimplifiesTo {φ : FunDecl} {ςs : Picks}
-    (Ψ : ςs.DerivedPost φ.tyArity) (Θ : Solver) (Φ : φ.Subvariant ςs) : Prop :=
+    (Ψ : ςs.DerivedPost φ.arity) (Θ : Solver) (Φ : φ.Subvariant ςs) : Prop :=
   Θ.Simplify
     (tt := polyTele _ (.cons fun _ : Val => ςs.teleOf.app (.uniform Val ςs.valArity)))
     (polyAsrt fun ⟨r, args⟩ S => (Φ r).at args S)

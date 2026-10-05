@@ -29,7 +29,7 @@ def boxSubv : boxDecl.Subvariant ςsBox :=
 
 /-- `boxSubv` only reads the typed subvariant supplied for its type parameter at rank `0`. -/
 theorem boxSubv_at_congr (r : Val) (args : TeleArg (ςsBox.teleOf.app (.uniform Val ςsBox.valArity)))
-    (S T : SubvArgs.{0} (boxDecl.tyArity + ςsBox.freeArity))
+    (S T : SubvArgs.{0} (boxDecl.arity + ςsBox.freeArity))
     (hST : ∀ w, (S.get 0).get boxLib 0 w = (T.get 0).get boxLib 0 w) :
     (boxSubv r).at args S = (boxSubv r).at args T := by
   obtain ⟨s, ⟨⟩⟩ := S
@@ -86,11 +86,11 @@ theorem tryRefute_box : boxLib.TryRefute risl semSolver (SummCtx.base boxLib) (.
       (PFun.empty_union _).symm, PFun.disjoint_empty_left _, ⟨rfl, rfl⟩,
       blockOf b Val.unit, ∅, rfl, hdisj, hProp_blockOf b Val.unit, hown⟩
   case derivPost =>
-    refine ⟨SpecCtx.fromPicks ςsBox "box" boxLib boxDecl.tyArity .lok boxPost,
-      ⟨.update (φ := boxDecl) (tys := ςsBox.callTyArgs 1) (vals := ςsBox.callValArgs boxLib 1)
+    refine ⟨SpecCtx.fromPicks ςsBox "box" boxDecl.arity .lok boxPost,
+      ⟨.update (φ := boxDecl) (tys := ςsBox.callTyArgs 1) (vals := ςsBox.callValArgs 1)
           .empty rfl boxLib_box ?bodyTriple, ?callRule⟩⟩
     case callRule =>
-      exact wfSpec_mergeCall ςsBox "box" boxLib boxDecl.tyArity .lok boxPost
+      exact wfSpec_mergeCall ςsBox "box" boxDecl.arity .lok boxPost
         (by simp [SpecCtx.update_apply])
     case bodyTriple =>
       refine .cons (tt := ςsBox.callTele 1) (tt' := ςsBox.callTele 1) id
@@ -130,7 +130,7 @@ def reboxSubv : reboxDecl.Subvariant ςsRebox :=
 /-- `reboxSubv` only reads the typed subvariant supplied for its type parameter at rank `0`. -/
 theorem reboxSubv_at_congr (r : Val)
     (args : TeleArg (ςsRebox.teleOf.app (.uniform Val ςsRebox.valArity)))
-    (S T : SubvArgs.{0} (reboxDecl.tyArity + ςsRebox.freeArity))
+    (S T : SubvArgs.{0} (reboxDecl.arity + ςsRebox.freeArity))
     (hST : ∀ w, (S.get 0).get boxLib 0 w = (T.get 0).get boxLib 0 w) :
     (reboxSubv r).at args S = (reboxSubv r).at args T := by
   obtain ⟨s, ⟨⟩⟩ := S
@@ -198,12 +198,12 @@ theorem tryRefute_rebox : boxLib.TryRefute risl semSolver boxCtx (.inl (.boxT, r
       hProp_blockOf b₂ (.loc (b₁, 0)), blockOf b₁ Val.unit, ∅, rfl, hd₁,
       hProp_blockOf b₁ Val.unit, hown⟩
   case derivPost =>
-    refine ⟨SpecCtx.fromPicks ςsRebox "rebox" boxLib reboxDecl.tyArity .lok reboxPost,
+    refine ⟨SpecCtx.fromPicks ςsRebox "rebox" reboxDecl.arity .lok reboxPost,
       ⟨.update (φ := reboxDecl) (tys := ςsRebox.callTyArgs 1)
-          (vals := ςsRebox.callValArgs boxLib 1)
+          (vals := ςsRebox.callValArgs 1)
           .empty rfl boxLib_rebox ?bodyTriple, ?callRule⟩⟩
     case callRule =>
-      exact wfSpec_mergeCall ςsRebox "rebox" boxLib reboxDecl.tyArity .lok reboxPost
+      exact wfSpec_mergeCall ςsRebox "rebox" reboxDecl.arity .lok reboxPost
         (by simp [SpecCtx.update_apply])
     case bodyTriple =>
       refine .cons (tt := ςsRebox.callTele 1) (tt' := ςsRebox.callTele 1) id
@@ -240,7 +240,7 @@ def cycleSubv : cycleDecl.Subvariant ςsCycle :=
 /-- `cycleSubv` only reads the typed subvariant supplied for its type parameter at rank `0`. -/
 theorem cycleSubv_at_congr (r : Val)
     (args : TeleArg (ςsCycle.teleOf.app (.uniform Val ςsCycle.valArity)))
-    (S T : SubvArgs.{0} (cycleDecl.tyArity + ςsCycle.freeArity))
+    (S T : SubvArgs.{0} (cycleDecl.arity + ςsCycle.freeArity))
     (hST : ∀ w, (S.get 0).get boxLib 0 w = (T.get 0).get boxLib 0 w) :
     (cycleSubv r).at args S = (cycleSubv r).at args T := by
   obtain ⟨s, ⟨⟩⟩ := S
@@ -368,12 +368,12 @@ theorem tryRefute_cycle : boxLib.TryRefute risl semSolver reboxCtx (.inl (.boxT,
       hProp_blockOf b₂ (.loc (b₂, 0)), blockOf b₁ Val.unit, ∅, rfl, hd₁,
       hProp_blockOf b₁ Val.unit, hown⟩
   case derivPost =>
-    refine ⟨SpecCtx.fromPicks ςsCycle "cycle" boxLib cycleDecl.tyArity .lok cyclePost,
+    refine ⟨SpecCtx.fromPicks ςsCycle "cycle" cycleDecl.arity .lok cyclePost,
       ⟨.update (φ := cycleDecl) (tys := ςsCycle.callTyArgs 1)
-          (vals := ςsCycle.callValArgs boxLib 1)
+          (vals := ςsCycle.callValArgs 1)
           .empty rfl boxLib_cycle ?bodyTriple, ?callRule⟩⟩
     case callRule =>
-      exact wfSpec_mergeCall ςsCycle "cycle" boxLib cycleDecl.tyArity .lok cyclePost
+      exact wfSpec_mergeCall ςsCycle "cycle" cycleDecl.arity .lok cyclePost
         (by simp [SpecCtx.update_apply])
     case bodyTriple =>
       refine .cons (tt := ςsCycle.callTele 1) (tt' := ςsCycle.callTele 1) id
@@ -792,14 +792,14 @@ theorem tryRefute_drop : boxLib.TryRefute risl semSolver cycleCtx (.inr boxSourc
       dropSubv_satAt (hProp_opaque_finite (hProp_empty_opaque_unit.{0} boxLib))
         (hProp_empty_get_default boxLib 0)⟩
   case derivPost =>
-    refine ⟨SpecCtx.fromPicks ςsDrop "drop" boxLib dropDecl.tyArity .lerr dropPost
+    refine ⟨SpecCtx.fromPicks ςsDrop "drop" dropDecl.arity .lerr dropPost
         (dropCtx₁ fun ts => ts.ty),
       ⟨.update (tt := ςsDrop.callTele 1) (φ := dropDecl) (tys := ςsDrop.callTyArgs 1)
-          (vals := ςsDrop.callValArgs boxLib 1)
+          (vals := ςsDrop.callValArgs 1)
           (wfSpecCtx_dropCtx₁ _) rfl boxLib_drop ?bodyTriple,
         ?callRule⟩⟩
     case callRule =>
-      exact wfSpec_mergeCall ςsDrop "drop" boxLib dropDecl.tyArity .lerr dropPost
+      exact wfSpec_mergeCall ςsDrop "drop" dropDecl.arity .lerr dropPost
         (by simp [SpecCtx.update_apply])
     case bodyTriple =>
       refine .cons (tt := ςsDrop.callTele 1) (tt' := ςsDrop.callTele 1) id

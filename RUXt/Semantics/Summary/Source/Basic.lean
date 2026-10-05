@@ -23,7 +23,7 @@ namespace RUXt
 namespace Source
 
 /-- The number of type parameters the type constructor a source produces uses. -/
-abbrev tyArity (s : Source) : ℕ := s.fn.ty.arity
+abbrev resArity (s : Source) : ℕ := s.fn.ty.arity
 
 /-- The type arguments of a source bound in a template with `N` type parameters, read off the
 type arguments `types` of that template along the embedding `Source.ren`. -/
@@ -56,7 +56,7 @@ the type constructor the source produces uses. -/
 def SelsOk : List Source → List (List TyIdx) → ℕ → Prop
   | [], _, _ => True
   | s :: srcs, osels, base =>
-      (∀ j ∈ osels.headD [], j < base) ∧ s.tyArity ≤ (osels.headD []).length ∧
+      (∀ j ∈ osels.headD [], j < base) ∧ s.resArity ≤ (osels.headD []).length ∧
       SelsOk srcs osels.tail (base + s.freeArity)
 
 /-- Two families of selections agree on the sources `srcs`, bound one after the other: for
@@ -65,7 +65,7 @@ constructor it produces uses. -/
 def SelsAgree : List Source → List (List TyIdx) → List (List TyIdx) → Prop
   | [], _, _ => True
   | s :: srcs, osels, osels' =>
-      (∀ k < s.tyArity, (osels.headD []).getD k 0 = (osels'.headD []).getD k 0) ∧
+      (∀ k < s.resArity, (osels.headD []).getD k 0 = (osels'.headD []).getD k 0) ∧
       SelsAgree srcs osels.tail osels'.tail
 
 end Source
@@ -121,7 +121,7 @@ theorem le_maxNameLen {xs : List PVar}
 
 namespace FunTempl
 
-variable {tt : Tele} {tyArity : ℕ}
+variable {tt : Tele} {arity : ℕ}
 
 /-! ### Valid templates
 
@@ -130,12 +130,12 @@ template, and its result type constructor only uses type parameters of the templ
 
 /-- Structural validity of a template: every parameter carries a bare type parameter of the
 template, and the result type constructor only uses type parameters of the template. -/
-def Valid (φ : FunTempl tt tyArity) : Prop :=
-  (∀ p ∈ φ.params, ∃ i < tyArity, p.2 = .param i) ∧ φ.ty.Bounded tyArity
+def Valid (φ : FunTempl tt arity) : Prop :=
+  (∀ p ∈ φ.params, ∃ i < arity, p.2 = .param i) ∧ φ.ty.Bounded arity
 
 /-- Every parameter type of a template is one of the type arguments it is instantiated at,
 ruling out parameter types such as `List<U>`. -/
-def ValidTyCons (φ : FunTempl tt tyArity) (types : TyArgs tyArity) : Prop :=
+def ValidTyCons (φ : FunTempl tt arity) (types : TyArgs arity) : Prop :=
   ∀ x τ, (x, τ) ∈ φ.sig.apply types → τ ∈ types.toList
 
 end FunTempl
@@ -179,14 +179,14 @@ theorem SelsOk.osel_lt {s : Source} {srcs : List Source} {osels : List (List TyI
     (h : SelsOk (s :: srcs) osels base) : ∀ j ∈ osels.headD [], j < base := h.1
 theorem SelsOk.length_le {s : Source} {srcs : List Source} {osels : List (List TyIdx)}
     {base : ℕ} (h : SelsOk (s :: srcs) osels base) :
-    s.tyArity ≤ (osels.headD []).length := h.2.1
+    s.resArity ≤ (osels.headD []).length := h.2.1
 theorem SelsOk.tail {s : Source} {srcs : List Source} {osels : List (List TyIdx)} {base : ℕ}
     (h : SelsOk (s :: srcs) osels base) : SelsOk srcs osels.tail (base + s.freeArity) :=
   h.2.2
 /-- The embedding of the type parameters of a bound source stays within the type parameters
 of the template binding it. -/
 theorem ren_lt {s : Source} {osel : List TyIdx} {base N : ℕ}
-    (hosel : ∀ j ∈ osel, j < base) (hlen : s.tyArity ≤ osel.length)
+    (hosel : ∀ j ∈ osel, j < base) (hlen : s.resArity ≤ osel.length)
     (hfit : base + s.freeArity ≤ N) {i : TyIdx} (hi : i < s.arity) :
     s.ren osel base i < N :=
   Nat.lt_of_lt_of_le (TyConsId.mergeRen_lt hosel hlen le_rfl hi) hfit
@@ -233,11 +233,11 @@ theorem bindAliases_substTerm {rename : PVar → PVar} {x : PVar} {t : Term} {e 
 
 namespace FunTempl
 
-variable {tt : Tele} {tyArity : ℕ}
+variable {tt : Tele} {arity : ℕ}
 
 /-- A valid template is bounded: none of its type constructors refers to a type parameter it
 does not have. -/
-theorem Valid.bounded {φ : FunTempl tt tyArity} (h : φ.Valid) : φ.Bounded := by
+theorem Valid.bounded {φ : FunTempl tt arity} (h : φ.Valid) : φ.Bounded := by
   refine ⟨fun p hp => ?_, h.2⟩
   obtain ⟨i, hi, hp2⟩ := h.1 p hp
   rw [hp2]
@@ -247,8 +247,8 @@ theorem Valid.bounded {φ : FunTempl tt tyArity} (h : φ.Valid) : φ.Bounded := 
 
 /-- Every parameter type of a valid template is one of the type arguments it is instantiated
 at. -/
-theorem Valid.validTyCons {φ : FunTempl tt tyArity} (h : φ.Valid)
-    (types : TyArgs tyArity) : φ.ValidTyCons types := by
+theorem Valid.validTyCons {φ : FunTempl tt arity} (h : φ.Valid)
+    (types : TyArgs arity) : φ.ValidTyCons types := by
   intro x τ hx
   obtain ⟨τ, hC, rfl⟩ := mem_paramCons_of_mem_sig hx
   obtain ⟨p, hp, rfl⟩ := List.mem_map.mp hC
@@ -283,7 +283,7 @@ end TyConsId
 
 namespace FunTempl
 
-variable {tt : Tele} {tyArity : ℕ}
+variable {tt : Tele} {arity : ℕ}
 
 /-- The resources the `values` own at the type constructors `cs`, read through `own` at each
 constructor and its rank counted from the offsets `off`. -/
@@ -293,7 +293,7 @@ def ownValsAt (own : TyConsId → ℕ → Val → Asrt.{0}) (off : TyConsId → 
 
 /-- The resources the input `values` own at the parameters of a template, read through
 `own`. -/
-def ownVals (φ : FunTempl tt tyArity) (own : TyConsId → ℕ → Val → Asrt.{0})
+def ownVals (φ : FunTempl tt arity) (own : TyConsId → ℕ → Val → Asrt.{0})
     (values : List Val) : Asrt.{0} :=
   ownValsAt own (fun _ => 0) φ.paramCons values
 
@@ -347,7 +347,7 @@ end TyConsId
 
 namespace FunTempl
 
-variable {tt : Tele} {tyArity : ℕ}
+variable {tt : Tele} {arity : ℕ}
 
 @[simp] theorem ownValsAt_nil_values (own : TyConsId → ℕ → Val → Asrt.{0})
     (off : TyConsId → ℕ) (cs : List TyConsId) : ownValsAt own off cs [] = .emp := rfl
@@ -426,7 +426,7 @@ theorem ownValsAt_append (own : TyConsId → ℕ → Val → Asrt.{0}) (off : Ty
 
 /-- Two readings agreeing on the type constructors of the parameters require the same
 resources. -/
-theorem ownVals_congr {φ : FunTempl tt tyArity} {own own' : TyConsId → ℕ → Val → Asrt.{0}}
+theorem ownVals_congr {φ : FunTempl tt arity} {own own' : TyConsId → ℕ → Val → Asrt.{0}}
     (values : List Val) (h : ∀ C ∈ φ.paramCons, ∀ k v, own C k v = own' C k v) :
     φ.ownVals own values = φ.ownVals own' values :=
   ownValsAt_congr _ φ.paramCons values h
@@ -641,17 +641,17 @@ theorem SelsAgree.refl : ∀ (srcs : List Source) (osels : List (List TyIdx)),
 
 /-- Any two families of selections agree on sources whose type constructor uses no type
 parameter: no selection is ever read for them. -/
-theorem SelsAgree.of_tyArity : ∀ (srcs : List Source) (osels osels' : List (List TyIdx)),
-    (∀ s ∈ srcs, s.tyArity = 0) → SelsAgree srcs osels osels'
+theorem SelsAgree.of_resArity : ∀ (srcs : List Source) (osels osels' : List (List TyIdx)),
+    (∀ s ∈ srcs, s.resArity = 0) → SelsAgree srcs osels osels'
   | [], _, _, _ => trivial
   | s :: srcs, osels, osels', h =>
     ⟨fun k hk => absurd hk (by rw [h s (by simp)]; omega),
-      SelsAgree.of_tyArity srcs _ _ fun s' hs' => h s' (List.mem_cons_of_mem _ hs')⟩
+      SelsAgree.of_resArity srcs _ _ fun s' hs' => h s' (List.mem_cons_of_mem _ hs')⟩
 
 /-- The embedding of the type parameters of a source only reads the selection at the type
 parameters the type constructor it produces uses. -/
 theorem ren_congr {s : Source} {osel osel' : List TyIdx} (base : ℕ)
-    (h : ∀ k < s.tyArity, osel.getD k 0 = osel'.getD k 0) :
+    (h : ∀ k < s.resArity, osel.getD k 0 = osel'.getD k 0) :
     s.ren osel base = s.ren osel' base := by
   funext i
   unfold ren TyConsId.mergeRen

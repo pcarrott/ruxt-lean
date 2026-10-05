@@ -167,9 +167,6 @@ inductive WfSpec : SpecCtx.{u} → {tt : Tele.{u + 1}} → SymTriple.{u} tt → 
       (Γ ⊢ ⌈P₁⌉ e ⌈ε, Φ₁⌉) → (Γ ⊢ ⌈P₂⌉ e ⌈ε, Φ₂⌉) →
       (Γ ⊢ ⌈teleBind fun args => P₁.apply args ∨ₕ P₂.apply args⌉ e
         ⌈ε, fun v => teleBind fun args => (Φ₁ v).apply args ∨ₕ (Φ₂ v).apply args⌉)
-  -- The conclusion may only rename the program along the telescope map `f`: the two programs
-  -- have to agree at *every* instantiation of the telescope, whether or not the assertions
-  -- of the triple are satisfiable there.
   | cons {Γ Γ' : SpecCtx} {tt tt' : Tele}
         {P : SymAsrt tt} {e : SymExpr tt} {Φ : Val → SymAsrt tt}
         {P' : SymAsrt tt'} {e' : SymExpr tt'} {Φ' : Val → SymAsrt tt'}
@@ -211,7 +208,7 @@ theorem WfSpec.reindex {Γ : SpecCtx.{u}} {tt tt' : Tele.{u + 1}} {e : SymExpr t
 
 A specification of `f` is recorded once the body of the declaration `φ` the library maps `f`
 to has been derived for it.  The type arguments `tys` and the argument values `vals` the
-specification speaks of are *well-sized* tuples — `φ.tyArity` types and one value per
+specification speaks of are *well-sized* tuples — `φ.arity` types and one value per
 parameter of `φ` — so the body premise is simply the triple for the implementation `φ` gives
 at those types (`FunDecl.concretise`), run with those values (`FunImpl.with`).  The context
 stores the lists those tuples map to. -/
@@ -223,8 +220,7 @@ inductive WfSpecCtx (Λ : Library) : SpecCtx.{u} → Prop
         {P : SymAsrt tt} {ε : LExit} {Φ : Val → SymAsrt tt} :
       WfSpecCtx Λ Γ →
       Γ' = Γ.update ⟨tt, tys.toListLift, vals.toListLift, P, ε, Φ⟩ f →
-      Λ.MapsTo f φ →
-      (Γ ⊢ ⌈P⌉ (SymExpr.body φ tys vals) ⌈ε, Φ⌉) →
+      Λ.MapsTo f φ → (Γ ⊢ ⌈P⌉ (SymExpr.body φ tys vals) ⌈ε, Φ⌉) →
       WfSpecCtx Λ Γ'
 @[inherit_doc] scoped infix:50 " ≺ₛ " => WfSpecCtx
 

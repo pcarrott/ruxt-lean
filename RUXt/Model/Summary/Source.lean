@@ -32,12 +32,15 @@ namespace Source
 does not use. -/
 def freeArity (s : Source) : ℕ := s.fn.ty.freeArity s.arity
 
+/-- The number of input values of a source: one per parameter of its template. -/
+abbrev valArity (s : Source) : ℕ := s.fn.valArity
+
 /-- All symbolic values a list of sources depends on. -/
 def mergedTeleOf : List Source → Tele :=
   List.foldr (Tele.app ∘ teleOf) [tele]
 /-- Total number of input values of a list of sources. -/
 def mergedValArity : List Source → ℕ :=
-  List.foldr (fun s => Nat.add s.fn.params.length) 0
+  List.foldr (fun s => Nat.add s.valArity) 0
 /-- Total number of free type parameters of a list of sources. -/
 def mergedFreeArity : List Source → ℕ :=
   List.foldr (Nat.add ∘ freeArity) 0

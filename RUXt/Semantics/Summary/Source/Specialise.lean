@@ -420,7 +420,7 @@ of the supplied sources start, and there are as many of them as the type constru
 supplied source produces uses. -/
 theorem selsOk_replicate (o : List TyIdx) {k : ℕ} (hk : ∀ j ∈ o, j < k) :
     ∀ (srcs : List Source) (L base : ℕ), k ≤ base → srcs.length ≤ L →
-      (∀ s' ∈ srcs, s'.tyArity ≤ o.length) →
+      (∀ s' ∈ srcs, s'.resArity ≤ o.length) →
       Source.SelsOk srcs (List.replicate L o) base
   | [], _, _, _, _, _ => trivial
   | s' :: srcs, L, base, hbase, hlen, harity => by
@@ -515,7 +515,7 @@ theorem selsOk_specSels (hi : i < s.arity)
   selsOk_replicate _ (fun _ hj => (TyConsId.mem_params_shiftTo.mp hj).2) (ςs.map Summary.src) _ _
     (Nat.add_le_add_right (Nat.le_sub_one_of_lt hi) _)
     (le_of_eq hlen) fun s' hs' => by
-      rw [Source.tyArity, (hmatch s' hs').arity_eq, ← TyConsId.arity_shiftTo τ i]
+      rw [Source.resArity, (hmatch s' hs').arity_eq, ← TyConsId.arity_shiftTo τ i]
       rfl
 
 /-- A specialised source is structurally valid: the parameters it keeps still carry bare type
@@ -876,7 +876,7 @@ theorem Expr.mem_bindSourcesAux_paramCons_of {N : ℕ} {body : TyArgs N → Expr
           have hlt : s.fn.ty.params.idxOf j < (osels.headD []).length := by
             have h1 := List.idxOf_lt_length_iff.mpr hmem
             have h2 := hsel.2.1
-            rw [Source.tyArity, TyConsId.arity] at h2
+            rw [Source.resArity, TyConsId.arity] at h2
             omega
           rw [List.getD_eq_getElem?_getD, List.getElem?_eq_getElem hlt, Option.getD_some]
           cases osels with

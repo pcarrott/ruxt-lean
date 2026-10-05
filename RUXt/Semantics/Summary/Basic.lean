@@ -109,10 +109,10 @@ theorem TyConsId.ownsAt_transport {C : TyConsId} {n m : ℕ} (Λ : Library) (h :
 typed subvariants are the ones they own at the renamed type constructors of its parameters:
 the two sides read the same typed subvariant at every parameter, one by reindexing the
 tuple, the other by renaming the constructor. -/
-theorem FunTempl.ownVals_reindex {tt : Tele} {tyArity n : ℕ} (φ : FunTempl tt tyArity)
+theorem FunTempl.ownVals_reindex {tt : Tele} {arity n : ℕ} (φ : FunTempl tt arity)
     (Λ : Library) (ρ : TyIdx → TyIdx) (S : SubvArgs.{0} n) (values : List Val)
-    (hb : φ.Bounded) (hρ : ∀ i < tyArity, ρ i < n) :
-    φ.ownVals (fun C => C.ownsAt Λ (TeleArg.reindex default ρ tyArity S)) values
+    (hb : φ.Bounded) (hρ : ∀ i < arity, ρ i < n) :
+    φ.ownVals (fun C => C.ownsAt Λ (TeleArg.reindex default ρ arity S)) values
       = φ.ownVals (fun C => (C.rename ρ).ownsAt Λ S) values := by
   refine FunTempl.ownVals_congr values fun C hC k v => ?_
   obtain ⟨p, hp, rfl⟩ := List.mem_map.mp hC
@@ -365,8 +365,8 @@ theorem post_apply (ς : Summary) (S : SubvArgs.{0} ς.src.arity) (r : Val)
 
 /-- A valid summary inhabits a type constructor of exactly as many type arguments as it
 supplies to it. -/
-theorem tyArity_of_valid {ς : Summary} {Λ : Library} {τ : TyConsId} (h : ς.Valid Λ τ) :
-    ς.src.tyArity = τ.arity := h.src_ty.arity_eq
+theorem resArity_of_valid {ς : Summary} {Λ : Library} {τ : TyConsId} (h : ς.Valid Λ τ) :
+    ς.src.resArity = τ.arity := h.src_ty.arity_eq
 
 /-- The source of a base summary has no parameter. -/
 @[simp] theorem base_src_params (kind : BaseTy) : (base kind).src.fn.params = [] := by

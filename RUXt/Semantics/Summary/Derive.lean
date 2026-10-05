@@ -43,7 +43,7 @@ called function and of the picked sources. -/
 theorem callSource_m :
     (φ.callSource f ςs).fn.params
       = boundParams (max (RUXt.maxNameLen φ.template.paramNames) ςs.maxNameLen)
-          φ.template.paramCons φ.tyArity ςs.srcs := rfl
+          φ.template.paramCons φ.arity ςs.srcs := rfl
 
 /-- The bound sources fit the parameters they are bound to: each of them names its type
 parameters in the order of the anonymous form of the constructor it produces, a constructor
@@ -57,30 +57,30 @@ def SrcsFit (n : ℕ) (srcs : List Source) (params : List (PVar × TyConsId)) : 
 `PVar.freshen`, with the parameters of `φ` as the variables and the free type parameters of the
 bound sources starting right after the type parameters of `φ`, whatever the expression the
 latter ends in. -/
-theorem callSource_params {N : ℕ} (t : RUXt.TyArgs N → Expr) :
+theorem callSource_params {arity : ℕ} (t : RUXt.TyArgs arity → Expr) :
     (φ.callSource f ςs).fn.params
       = (bindSourcesAux t (PVar.freshen (max (RUXt.maxNameLen φ.template.paramNames) ςs.maxNameLen))
-          φ.template.paramNames φ.template.ty φ.tyArity
+          φ.template.paramNames φ.template.ty φ.arity
           (φ.template.paramCons.map TyConsId.params) ςs.srcs).params :=
-  Source.boundParams_eq t _ ςs.srcs φ.template.paramNames φ.tyArity
+  Source.boundParams_eq t _ ςs.srcs φ.template.paramNames φ.arity
 
 /-- The body of `FunDecl.callSource` is the body of `bindSourcesAux` at the renaming
 `PVar.freshen`, with the call to `f` on the parameters of `φ` as the expression it ends in, the
 parameters of `φ` as the variables and the free type parameters of the bound sources starting
 right after the type parameters of `φ`, as soon as the picked sources fit the parameters of `φ`
 (`FunDecl.SrcsFit`). -/
-theorem callSource_body_apply (hfit : SrcsFit φ.tyArity ςs.srcs φ.template.params)
-    (args : TeleArg ςs.teleOf) (types : RUXt.TyArgs (φ.tyArity + ςs.freeArity)) :
+theorem callSource_body_apply (hfit : SrcsFit φ.arity ςs.srcs φ.template.params)
+    (args : TeleArg ςs.teleOf) (types : RUXt.TyArgs (φ.arity + ςs.freeArity)) :
     (((φ.callSource f ςs).fn.body.apply args).apply types)
       = (((bindSourcesAux
           (fun types => .call f (TyArgs.tyParams types) (Term.ofVars φ.template.paramNames))
           (PVar.freshen (max (RUXt.maxNameLen φ.template.paramNames) ςs.maxNameLen))
-          φ.template.paramNames φ.template.ty φ.tyArity
+          φ.template.paramNames φ.template.ty φ.arity
           (φ.template.paramCons.map TyConsId.params) ςs.srcs).body.apply args).apply types) := by
   simp only [callSource, teleBind_apply]
   exact Source.bindSources_eq
     (fun types => .call f (TyArgs.tyParams types) (Term.ofVars φ.template.paramNames)) types
-    φ.template.params φ.tyArity ςs.srcs _ args (hfit.imp fun _ _ h => ⟨h.1, h.2.1, h.2.2.1⟩)
+    φ.template.params φ.arity ςs.srcs _ args (hfit.imp fun _ _ h => ⟨h.1, h.2.1, h.2.2.1⟩)
     (fun j hj => by unfold RUXt.TyArgs.get; exact TeleArg.getD_toList_block _ _ _ hj)
 
 /-- The source derived for a call produces the result type constructor of the called
@@ -139,10 +139,10 @@ equivalence, at every result value, every tuple of arguments of the derived summ
 tuple of typed subvariants, with the derived postcondition with the input values of the call
 bound. -/
 theorem semSolver_simplifiesTo {ςs : Picks} {φ : FunDecl}
-    {Ψ : ςs.DerivedPost φ.tyArity} {Φ : φ.Subvariant ςs} :
+    {Ψ : ςs.DerivedPost φ.arity} {Φ : φ.Subvariant ςs} :
     Ψ.SimplifiesTo semSolver Φ ↔
       ∀ (r : Val) (args : TeleArg (ςs.teleOf.app (.uniform Val ςs.valArity)))
-        (S : SubvArgs.{0} (φ.tyArity + ςs.freeArity)),
+        (S : SubvArgs.{0} (φ.arity + ςs.freeArity)),
         (Φ r).at args S ⊣⊢ .ex fun vs => (Ψ r).at (args.app vs) S := by
   rw [Picks.DerivedPost.SimplifiesTo, semSolver_simplify]
   constructor
@@ -158,10 +158,10 @@ theorem semSolver_simplifiesTo {ςs : Picks} {φ : FunDecl}
 postcondition `Ψ`, applied to the result value and to both tuples of arguments, is `Ψ` with the
 input values of the call existentially bound. -/
 theorem Picks.DerivedPost.SimplifiesTo.ownedAt {ςs : Picks} {f : Fid} {φ : FunDecl}
-    {Ψ : ςs.DerivedPost φ.tyArity} {Ψ' : φ.Subvariant ςs}
+    {Ψ : ςs.DerivedPost φ.arity} {Ψ' : φ.Subvariant ςs}
     (h : Ψ.SimplifiesTo semSolver Ψ')
     (r : Val) (args : TeleArg (φ.summary f ςs Ψ').ownedTele)
-    (S : SubvArgs.{0} (φ.tyArity + ςs.freeArity)) :
+    (S : SubvArgs.{0} (φ.arity + ςs.freeArity)) :
     (φ.summary f ςs Ψ').ownedAt r args S ⊣⊢
       .ex fun vs => PolyAsrt.at (Ψ r) (args.app vs) S :=
   semSolver_simplifiesTo.mp h r args S
@@ -185,9 +185,9 @@ namespace Picks
 symbolic values of it, the single derivation covers every tuple of them
 (`uxTriple_poly`). -/
 theorem DerivableCall.uxFrameTriple {ςs : Picks} {L : Logic.{0}} (hL : L.Sound)
-    {Λ : Library} {f : Fid} {tyArity : ℕ} {ε : LExit} {Ψ : ςs.DerivedPost tyArity}
+    {Λ : Library} {f : Fid} {arity : ℕ} {ε : LExit} {Ψ : ςs.DerivedPost arity}
     (h : ςs.DerivableCall L Λ f ε Ψ) :
-    UXFrameTriple Λ ⟨ςs.mergeOwned Λ tyArity, ςs.mergeCall f Λ tyArity, ε, Ψ⟩ :=
+    UXFrameTriple Λ ⟨ςs.mergeOwned, ςs.mergeCall f, ε, Ψ⟩ :=
   hL h
 
 /-! ### The picked summaries and their sources -/
@@ -209,14 +209,14 @@ theorem srcs_ok {Λ : Library} {ςs : Picks} (hvalid : ∀ τ ς, (τ, ς) ∈ �
 /-- The typed subvariant arguments `merge` hands to the head summary `ς`, picked for `τ`: the
 components of the block `T` of the type parameters of the called function at the type
 parameters of `τ`, followed by its own block `own` of free ones. -/
-abbrev headSubvs (τ : TyConsId) (ς : Summary) {N : ℕ} (T : SubvArgs.{0} N)
+abbrev headSubvs (τ : TyConsId) (ς : Summary) {arity : ℕ} (T : SubvArgs.{0} arity)
     (own : SubvArgs.{0} ς.src.freeArity) : SubvArgs.{0} ς.src.arity :=
   ((T.reindex default (τ.params.getD · 0) τ.arity).appendUniform own).reindex default id
     ς.src.arity
 
 /-- The head summary of a merge reads the typed subvariant supplied for a type parameter of the
 type constructor it is picked for at the position of that type parameter. -/
-theorem headSubvs_get_param (τ : TyConsId) (ς : Summary) {N : ℕ} (T : SubvArgs.{0} N)
+theorem headSubvs_get_param (τ : TyConsId) (ς : Summary) {arity : ℕ} (T : SubvArgs.{0} arity)
     (own : SubvArgs.{0} ς.src.freeArity) {j : ℕ}
     (hj : j < τ.arity) (hn : τ.arity + ς.src.freeArity = ς.src.arity) :
     (headSubvs τ ς T own).get j = T.get (τ.params.getD j 0) := by
@@ -227,55 +227,55 @@ theorem headSubvs_get_param (τ : TyConsId) (ς : Summary) {N : ℕ} (T : SubvAr
 parameters of the called function and the block of the free ones, the head summary reads its
 arguments off the two blocks (`Picks.headSubvs`), and the remaining summaries are merged at the
 two blocks joined back, with the subvariants of the head summary consumed. -/
-theorem merge_cons {X : Type _} (Λ : Library) (x : X) f (τ : TyConsId) (ς : Summary)
-    (ςs : Picks) {N : ℕ} (S : SubvArgs.{0} (N + (ς.src.freeArity + ςs.freeArity)))
+theorem merge_cons {X : Type _} (x : X) f (τ : TyConsId) (ς : Summary)
+    (ςs : Picks) {arity : ℕ} (S : SubvArgs.{0} (arity + (ς.src.freeArity + ςs.freeArity)))
     (args : TeleArg (tripleTele ((τ, ς) :: ςs))) :
-    merge Λ x f ((τ, ς) :: ςs) S args
+    merge x f ((τ, ς) :: ςs) S args
       = f ς
           (args.snd.splitUniform ςs.size 1).2.1
           args.fst.fst.fst
-          (headSubvs τ ς (S.splitUniform N _).1
-            ((S.splitUniform N _).2.splitUniform ς.src.freeArity ςs.freeArity).1)
+          (headSubvs τ ς (S.splitUniform arity _).1
+            ((S.splitUniform arity _).2.splitUniform ς.src.freeArity ςs.freeArity).1)
           (args.fst.snd.splitUniform ς.valArity ςs.valArity).1
-          (ςs.merge Λ x f
-            ((ς.src.dropSubvArgs (S.splitUniform N _).1 τ.params).appendUniform
-              ((S.splitUniform N _).2.splitUniform ς.src.freeArity ςs.freeArity).2)
+          (ςs.merge x f
+            ((ς.src.dropSubvArgs (S.splitUniform arity _).1 τ.params).appendUniform
+              ((S.splitUniform arity _).2.splitUniform ς.src.freeArity ςs.freeArity).2)
             ((args.fst.fst.snd.app
                 (args.fst.snd.splitUniform ς.valArity ςs.valArity).2).app
               (args.snd.splitUniform ςs.size 1).1)) := rfl
 
 /-- The type arguments of the call on the picked summaries: the types of the typed
-subvariants supplied for the first `N` type parameters of the derived source, the ones
+subvariants supplied for the first `arity` type parameters of the derived source, the ones
 belonging to the called function. -/
-def mergeTys (ςs : Picks) (N : ℕ) (S : SubvArgs.{0} (N + ςs.freeArity)) :
+def mergeTys (ςs : Picks) {arity : ℕ} (S : SubvArgs.{0} (arity + ςs.freeArity)) :
     TeleLift ςs.tripleTele (List Ty) :=
   teleLift fun _ => TyArgs.tyParams S.tys
 
 /-- The results of the picked summaries: the input values of the call. -/
-def mergeVals (ςs : Picks) (Λ : Library) (N : ℕ) (S : SubvArgs.{0} (N + ςs.freeArity)) :
+def mergeVals (ςs : Picks) {arity : ℕ} (S : SubvArgs.{0} (arity + ςs.freeArity)) :
     TeleLift ςs.tripleTele (List Val) :=
-  teleLift (ςs.merge Λ [] (fun _ r _ _ _ rs => r :: rs) S)
+  teleLift (ςs.merge [] (fun _ r _ _ _ rs => r :: rs) S)
 
-private theorem mergeVals_length_aux (Λ : Library) : ∀ (ςs : Picks) {N : ℕ}
-    (S : SubvArgs.{0} (N + ςs.freeArity)) (args : TeleArg ςs.tripleTele),
-    (ςs.merge Λ [] (fun _ r _ _ _ rs => r :: rs) S args).length = ςs.length
+private theorem mergeVals_length_aux : ∀ (ςs : Picks) {arity : ℕ}
+    (S : SubvArgs.{0} (arity + ςs.freeArity)) (args : TeleArg ςs.tripleTele),
+    (ςs.merge [] (fun _ r _ _ _ rs => r :: rs) S args).length = ςs.length
   | [], _, _, _ => rfl
   | (τ, ς) :: ςs, _, S, args => by
       rw [merge_cons]
       show (_ :: _).length = _
-      rw [List.length_cons, mergeVals_length_aux Λ ςs _ _, List.length_cons]
+      rw [List.length_cons, mergeVals_length_aux ςs _ _, List.length_cons]
 
-theorem mergeVals_length (ςs : Picks) (Λ : Library) (N : ℕ)
-    (S : SubvArgs.{0} (N + ςs.freeArity)) (args : TeleArg ςs.tripleTele) :
-    ((ςs.mergeVals Λ N S).at args).length = ςs.length := by
+theorem mergeVals_length (ςs : Picks) {arity : ℕ}
+    (S : SubvArgs.{0} (arity + ςs.freeArity)) (args : TeleArg ςs.tripleTele) :
+    ((ςs.mergeVals S).at args).length = ςs.length := by
   rw [mergeVals, teleLift_at]
-  exact mergeVals_length_aux Λ ςs _ args
+  exact mergeVals_length_aux ςs _ args
 
 /-- The merged call, written with its type and value projections. -/
-theorem mergeCall_eq (ςs : Picks) (f : Fid) (Λ : Library) (N : ℕ)
-    (S : SubvArgs.{0} (N + ςs.freeArity)) (args : TeleArg ςs.tripleTele) :
-    PolyExpr.at (ςs.mergeCall f Λ N) args S =
-      .call f ((ςs.mergeTys N S).at args) (Term.ofVals ((ςs.mergeVals Λ N S).at args)) := by
+theorem mergeCall_eq (ςs : Picks) (f : Fid) {arity : ℕ}
+    (S : SubvArgs.{0} (arity + ςs.freeArity)) (args : TeleArg ςs.tripleTele) :
+    PolyExpr.at (ςs.mergeCall f) args S =
+      .call f ((ςs.mergeTys S).at args) (Term.ofVals ((ςs.mergeVals S).at args)) := by
   rw [mergeCall, polyExpr_at, mergeTys, mergeVals, teleLift_at, teleLift_at]
 
 /-! ### Fitting the picked summaries to the parameters of a call -/
@@ -314,7 +314,7 @@ constructors they are filed under use — are usable from any position `base` at
 type parameters as the constructor it is filed under. -/
 private theorem selsOk_aux {n : ℕ} : ∀ (ςs : Picks) (base : ℕ),
     n ≤ base → (∀ C ∈ ςs.tyCons, C.Bounded n) →
-    (∀ τ ς, (τ, ς) ∈ ςs → ς.src.tyArity = τ.arity) →
+    (∀ τ ς, (τ, ς) ∈ ςs → ς.src.resArity = τ.arity) →
     Source.SelsOk ςs.srcs ςs.sels base
   | [], _, _, _, _ => trivial
   | (τ, ς) :: ςs, base, hbase, hb, harity => by
@@ -331,8 +331,8 @@ type parameters of the called function, hence already bound where the source is 
 there are exactly as many of them as the type constructor of the summary uses. -/
 theorem selsOk {Λ : Library} (hvalid : ∀ τ ς, (τ, ς) ∈ ςs → ς.Valid Λ τ) (hbounded : φ.Bounded)
     (hcons : ςs.tyCons = φ.template.paramCons) :
-    Source.SelsOk ςs.srcs ςs.sels φ.tyArity := by
-  refine selsOk_aux ςs φ.tyArity le_rfl ?bounded ?arity
+    Source.SelsOk ςs.srcs ςs.sels φ.arity := by
+  refine selsOk_aux ςs φ.arity le_rfl ?bounded ?arity
   case bounded =>
     intro C hC
     rw [hcons] at hC
@@ -340,13 +340,13 @@ theorem selsOk {Λ : Library} (hvalid : ∀ τ ς, (τ, ς) ∈ ςs → ς.Valid
     exact hbounded.param hp
   case arity =>
     intro τ ς hp
-    exact Summary.tyArity_of_valid (hvalid τ ς hp)
+    exact Summary.resArity_of_valid (hvalid τ ς hp)
 
 /-! ### The types the picked sources produce -/
 
 /-- The types a list of picked summaries produces are the instantiations of the type
 constructors they are filed under. -/
-private theorem resTys_aux {Λ : Library} {N : ℕ} (types : TyArgs N) :
+private theorem resTys_aux {Λ : Library} {arity : ℕ} (types : TyArgs arity) :
     ∀ (ςs : Picks) (base : ℕ), (∀ τ ς, (τ, ς) ∈ ςs → ς.Valid Λ τ) →
       Source.resTys ςs.srcs ςs.sels base types
         = ςs.tyCons.map fun C => C.concretise types
@@ -366,10 +366,10 @@ private theorem resTys_aux {Λ : Library} {N : ℕ} (types : TyArgs N) :
 /-- The types the picked sources produce are exactly the parameter types of the call. -/
 theorem resTys_eq_paramTypes {Λ : Library} (hvalid : ∀ τ ς, (τ, ς) ∈ ςs → ς.Valid Λ τ)
     (hbounded : φ.Bounded) (hcons : ςs.tyCons = φ.template.paramCons)
-    (types : TyArgs (φ.tyArity + ςs.freeArity)) :
-    Source.resTys ςs.srcs ςs.sels φ.tyArity types
-      = φ.paramTypes (types.splitUniform φ.tyArity ςs.freeArity).1 := by
-  rw [resTys_aux types ςs φ.tyArity hvalid, hcons, FunDecl.paramTypes, FunTempl.paramTys_apply]
+    (types : TyArgs (φ.arity + ςs.freeArity)) :
+    Source.resTys ςs.srcs ςs.sels φ.arity types
+      = φ.paramTypes (types.splitUniform φ.arity ςs.freeArity).1 := by
+  rw [resTys_aux types ςs φ.arity hvalid, hcons, FunDecl.paramTypes, FunTempl.paramTys_apply]
   refine List.map_congr_left fun C hC => ?_
   obtain ⟨p, hp, rfl⟩ := List.mem_map.mp hC
   exact (TyConsId.concretise_splitUniform_left (hbounded.param hp) types).symm
@@ -381,8 +381,8 @@ function are those of its parameters in the derived source: a source bound at th
 `τ.params` (`Source.selCount`) has, at the component `i` of that block, as many parameters as the
 parameters of the derived source it contributes (`Source.renCons`) carrying `i`. -/
 theorem selCount_eq_count_renCons {Λ : Library} {τ : TyConsId} {ς : Summary}
-    (hς : ς.Valid Λ τ) (hord : ς.src.fn.ty.InAnonOrder) {N B : ℕ}
-    (hNB : N ≤ B) {i : ℕ} (hi : i < N) :
+    (hς : ς.Valid Λ τ) (hord : ς.src.fn.ty.InAnonOrder) {arity B : ℕ}
+    (hNB : arity ≤ B) {i : ℕ} (hi : i < arity) :
     ς.src.selCount τ.params i = (ς.src.renCons τ.params B).count (.param i) := by
   have hK : ς.src.fn.ty.arity = τ.arity := hς.src_ty.arity_eq
   have hparam : ∀ C ∈ ς.src.fn.paramCons, ∃ k < ς.src.arity, C = .param k :=
@@ -408,13 +408,13 @@ theorem selCount_eq_count_renCons {Λ : Library} {τ : TyConsId} {ς : Summary}
 call: the resources their postconditions describe are produced by running the sources.  The
 sources are run on any tuple `values'` with the same components as the input values.
 
-The merge is at a tuple `S` of typed subvariants: those of the `N` type parameters of the called
+The merge is at a tuple `S` of typed subvariants: those of the `arity` type parameters of the called
 function, followed by those of the free type parameters of the picked sources, from the type
 parameter `B` of the derived source on.  They are those of the derived source, `S₀`, with the
 subvariants of the parameters of the summaries already visited consumed (`Source.dropSubvArgs`),
 as many at each component as the offsets `off`. -/
-theorem merge_runs {Λ : Library} {M : ℕ} (S₀ : SubvArgs.{0} M) {N : ℕ} :
-    ∀ (ςs : Picks) (B : ℕ) (args : TeleArg ςs.teleOf) (S : SubvArgs.{0} (N + ςs.freeArity))
+theorem merge_runs {Λ : Library} {M : ℕ} (S₀ : SubvArgs.{0} M) {arity : ℕ} :
+    ∀ (ςs : Picks) (B : ℕ) (args : TeleArg ςs.teleOf) (S : SubvArgs.{0} (arity + ςs.freeArity))
       (off : TyConsId → ℕ)
       (values : TeleArg (Tele.uniform Val ςs.valArity))
       (values' : TeleArg (Tele.uniform Val (Source.mergedValArity ςs.srcs)))
@@ -422,16 +422,16 @@ theorem merge_runs {Λ : Library} {M : ℕ} (S₀ : SubvArgs.{0} M) {N : ℕ} :
       values.toList = values'.toList →
       (∀ τ ς, (τ, ς) ∈ ςs → ς.Valid Λ τ) →
       (∀ τ ς, (τ, ς) ∈ ςs → ς.src.fn.ty.InAnonOrder) →
-      (∀ τ ς, (τ, ς) ∈ ςs → ∀ i ∈ τ.params, i < N) →
-      N ≤ B →
-      (∀ i < N, S.get i = ⟨(S₀.get i).ty, (S₀.get i).own.drop (off (.param i))⟩) →
-      (∀ j < ςs.freeArity, S.get (N + j)
+      (∀ τ ς, (τ, ς) ∈ ςs → ∀ i ∈ τ.params, i < arity) →
+      arity ≤ B →
+      (∀ i < arity, S.get i = ⟨(S₀.get i).ty, (S₀.get i).own.drop (off (.param i))⟩) →
+      (∀ j < ςs.freeArity, S.get (arity + j)
         = ⟨(S₀.get (B + j)).ty, (S₀.get (B + j)).own.drop (off (.param (B + j)))⟩) →
-      HProp h (ςs.merge Λ .emp
+      HProp h (ςs.merge .emp
         (fun ς r vs Ss rs P => ς.ownedAt r (vs |>.app rs) Ss ∗ P) S
         (args |>.app values |>.app rvals)) →
       ∃ g, Source.Runs Λ (fun C => C.ownsAt Λ S₀) S₀.tys ςs.srcs off ςs.sels B args values'
-        (ςs.merge Λ [] (fun _ r _ _ _ rs => r :: rs) S
+        (ςs.merge [] (fun _ r _ _ _ rs => r :: rs) S
           (args |>.app values |>.app rvals))
         g h := by
   intro ςs
@@ -444,18 +444,18 @@ theorem merge_runs {Λ : Library} {M : ℕ} (S₀ : SubvArgs.{0} M) {N : ℕ} :
     obtain ⟨τ, ς⟩ := p
     intro B args S off values values' rvals h hv hvalid hord hτN hNB hS hSF hpost
     -- The two blocks the step splits the tuple into.
-    set T : SubvArgs.{0} N := (S.splitUniform N (ς.src.freeArity + Picks.freeArity ςs)).1
+    set T : SubvArgs.{0} arity := (S.splitUniform arity (ς.src.freeArity + Picks.freeArity ςs)).1
       with hTdef
     set F : SubvArgs.{0} (ς.src.freeArity + Picks.freeArity ςs) :=
-      (S.splitUniform N (ς.src.freeArity + Picks.freeArity ςs)).2 with hFdef
-    have hT : ∀ i < N, T.get i = ⟨(S₀.get i).ty, (S₀.get i).own.drop (off (.param i))⟩ :=
+      (S.splitUniform arity (ς.src.freeArity + Picks.freeArity ςs)).2 with hFdef
+    have hT : ∀ i < arity, T.get i = ⟨(S₀.get i).ty, (S₀.get i).own.drop (off (.param i))⟩ :=
       fun i hi => by rw [hTdef, SubvArgs.get_splitUniform_left _ hi]; exact hS i hi
     have hF : ∀ j < ς.src.freeArity + Picks.freeArity ςs, F.get j
         = ⟨(S₀.get (B + j)).ty, (S₀.get (B + j)).own.drop (off (.param (B + j)))⟩ :=
       fun j hj => by rw [hFdef, SubvArgs.get_splitUniform_right]; exact hSF j hj
     have hς : ς.Valid Λ τ := hvalid τ ς List.mem_cons_self
     have hord₀ : ς.src.fn.ty.InAnonOrder := hord τ ς List.mem_cons_self
-    have hτN' : ∀ i ∈ τ.params, i < N := hτN τ ς List.mem_cons_self
+    have hτN' : ∀ i ∈ τ.params, i < arity := hτN τ ς List.mem_cons_self
     have hK : ς.src.fn.ty.arity = τ.arity := hς.src_ty.arity_eq
     have hn : τ.arity + ς.src.freeArity = ς.src.arity := by
       rw [← hK]; exact TyConsId.arity_add_freeArity hς.typechecks.ty_bounded
@@ -469,7 +469,7 @@ theorem merge_runs {Λ : Library} {M : ℕ} (S₀ : SubvArgs.{0} M) {N : ℕ} :
       fun j hj => Source.ren_of_inAnonOrder_sel ς.src hord₀ hK τ.params B hj
     have hgetD : ∀ j (hj : j < τ.arity), τ.params.getD j 0 = τ.params[j]'hj := fun j hj => by
       rw [List.getD_eq_getElem?_getD, List.getElem?_eq_getElem hj, Option.getD_some]
-    have hτlt : ∀ j < τ.arity, τ.params.getD j 0 < N := fun j hj => by
+    have hτlt : ∀ j < τ.arity, τ.params.getD j 0 < arity := fun j hj => by
       rw [hgetD j hj]
       exact hτN' _ (List.getElem_mem _)
     have hinj : ∀ j < ς.src.arity, ∀ j' < ς.src.arity, ρ j = ρ j' → j = j' := by
@@ -528,7 +528,7 @@ theorem merge_runs {Λ : Library} {M : ℕ} (S₀ : SubvArgs.{0} M) {N : ℕ} :
     -- The remaining summaries read the block of the type parameters of the called function with
     -- the subvariants of the parameters of the head summary consumed, and the remaining free
     -- ones.
-    have hT' : ∀ i < N, (ς.src.dropSubvArgs T τ.params).get i
+    have hT' : ∀ i < arity, (ς.src.dropSubvArgs T τ.params).get i
         = ⟨(S₀.get i).ty, (S₀.get i).own.drop
             (TyConsId.offAfter off (ς.src.renCons τ.params B) (.param i))⟩ := by
       intro i hi
@@ -588,23 +588,23 @@ theorem merge_runs {Λ : Library} {M : ℕ} (S₀ : SubvArgs.{0} M) {N : ℕ} :
       ⟨(TeleArg.splitUniform (size ςs) 1 rvals).2.1, _, g₁, g₂, h₁, h₂,
         rfl, rfl, rfl, hdisj12, hpre1, hstep1, hruns2⟩⟩
 
-theorem mergeOwned_runs {Λ : Library} (ςs : Picks) (N : ℕ)
+theorem mergeOwned_runs {Λ : Library} (ςs : Picks) (arity : ℕ)
     (args : TeleArg ςs.teleOf)
-    (S : SubvArgs.{0} (N + ςs.freeArity))
+    (S : SubvArgs.{0} (arity + ςs.freeArity))
     (values : TeleArg (Tele.uniform Val ςs.valArity))
     (values' : TeleArg (Tele.uniform Val (Source.mergedValArity ςs.srcs)))
     (rvals : TeleArg (Tele.uniform Val ςs.size)) (h : Heap)
     (hv : values.toList = values'.toList)
     (hvalid : ∀ τ ς, (τ, ς) ∈ ςs → ς.Valid Λ τ)
     (hord : ∀ τ ς, (τ, ς) ∈ ςs → ς.src.fn.ty.InAnonOrder)
-    (hτN : ∀ τ ς, (τ, ς) ∈ ςs → ∀ i ∈ τ.params, i < N)
+    (hτN : ∀ τ ς, (τ, ς) ∈ ςs → ∀ i ∈ τ.params, i < arity)
     (hpost : HProp h
-      (PolyAsrt.at (ςs.mergeOwned Λ N) (args |>.app values |>.app rvals) S)) :
-    ∃ g, Source.Runs Λ (fun C => C.ownsAt Λ S) S.tys ςs.srcs (fun _ => 0) ςs.sels N args values'
-      ((ςs.mergeVals Λ N S).at (args |>.app values |>.app rvals)) g h := by
+      (PolyAsrt.at ςs.mergeOwned (args |>.app values |>.app rvals) S)) :
+    ∃ g, Source.Runs Λ (fun C => C.ownsAt Λ S) S.tys ςs.srcs (fun _ => 0) ςs.sels arity args values'
+      ((ςs.mergeVals S).at (args |>.app values |>.app rvals)) g h := by
   rw [mergeOwned, polyAsrt_at] at hpost
   rw [mergeVals, teleLift_at]
-  exact merge_runs S ςs N args S (fun _ => 0) values values' rvals h hv hvalid hord hτN le_rfl
+  exact merge_runs S ςs arity args S (fun _ => 0) values values' rvals h hv hvalid hord hτN le_rfl
     (fun _ _ => rfl) (fun _ _ => rfl) hpost
 
 end Picks
@@ -623,12 +623,12 @@ value of a picked summary, its parameters are pairwise distinct and distinct fro
 the called function and of a picked source, and its body is a well-typed program whenever the
 call is. -/
 structure BindCallSourcesSpec (Λ : Library) (φ : FunDecl) (f : Fid) (ςs : Picks)
-    (types : RUXt.TyArgs (φ.tyArity + ςs.freeArity)) : Prop where
+    (types : RUXt.TyArgs (φ.arity + ςs.freeArity)) : Prop where
   /-- The merged template is structurally valid. -/
   valid : ((φ.callSource f ςs).fn).Valid
   /-- The merged template produces the result type of the call. -/
   resTy_apply_eq : ((φ.callSource f ςs).fn).resTy.apply types
-    = φ.resTy (types.splitUniform φ.tyArity ςs.freeArity).1
+    = φ.resTy (types.splitUniform φ.arity ςs.freeArity).1
   /-- The merged template has one parameter per input value of a picked summary. -/
   params_length : ((φ.callSource f ςs).fn).params.length = ςs.valArity
   /-- The parameters of the merged template are fresh: longer than every name of the called
@@ -642,8 +642,8 @@ structure BindCallSourcesSpec (Λ : Library) (φ : FunDecl) (f : Fid) (ςs : Pic
   safe : ∀ (args : TeleArg ςs.teleOf) (ν : VarCtx) (τ : Ty),
     (∀ x τx, (x, τx) ∈ ((φ.callSource f ςs).fn).sig.apply types → ν x = Part.some τx) →
     SafeProgram (ν.extend φ.paramNames
-        (φ.paramTypes (types.splitUniform φ.tyArity ςs.freeArity).1)) Λ τ
-      (.call f (types.splitUniform φ.tyArity ςs.freeArity).1.toList
+        (φ.paramTypes (types.splitUniform φ.arity ςs.freeArity).1)) Λ τ
+      (.call f (types.splitUniform φ.arity ςs.freeArity).1.toList
         (Term.ofVars φ.paramNames)) →
     SafeProgram ν Λ τ ((((φ.callSource f ςs).fn).body.apply args).apply types)
 
@@ -674,7 +674,7 @@ theorem srcsFit_of_picks : ∀ (ςs : Picks) (params : List (PVar × TyConsId)),
 /-- The type constructors the picked summaries are picked for use type parameters of the called
 function only. -/
 theorem params_lt_of_picks (hbounded : φ.Bounded) (hcons : ςs.tyCons = φ.template.paramCons) :
-    ∀ τ ς, (τ, ς) ∈ ςs → ∀ i ∈ τ.params, i < φ.tyArity := by
+    ∀ τ ς, (τ, ς) ∈ ςs → ∀ i ∈ τ.params, i < φ.arity := by
   intro τ ς hm i hi
   have hτ : τ ∈ ςs.tyCons := List.mem_map_of_mem (f := Prod.fst) hm
   rw [hcons] at hτ
@@ -690,7 +690,7 @@ theorem callSource_valid (hvalid : ∀ τ ς, (τ, ς) ∈ ςs → ς.Valid Λ �
     (by rw [callSource_ty, Expr.bindSourcesAux_ty])).mpr
     (Expr.bindSourcesAux_spec (Λ := Λ)
     (PVar.freshen_spec (m := max (RUXt.maxNameLen φ.paramNames) ςs.maxNameLen))
-    (fun i hi => Nat.lt_add_right _ (hbounded.2 i hi)) ςs.srcs φ.paramNames φ.tyArity
+    (fun i hi => Nat.lt_add_right _ (hbounded.2 i hi)) ςs.srcs φ.paramNames φ.arity
     (Expr.callSels φ)
     (fun types => .call f (TyArgs.tyParams types) (Term.ofVars φ.paramNames)) (TeleArg.replicate _ Ty.unit)
     (srcs_ok hvalid) (sels_eq_callSels hcons ▸ selsOk hvalid hbounded hcons) le_rfl).1
@@ -703,7 +703,7 @@ theorem callSource_params_nodup (hvalid : ∀ τ ς, (τ, ς) ∈ ςs → ς.Val
   rw [FunTempl.paramNames_congr (callSource_params φ f ςs _)]
   exact (Expr.bindSourcesAux_spec (Λ := Λ)
     (PVar.freshen_spec (m := max (RUXt.maxNameLen φ.paramNames) ςs.maxNameLen))
-    (fun i hi => Nat.lt_add_right _ (hbounded.2 i hi)) ςs.srcs φ.paramNames φ.tyArity
+    (fun i hi => Nat.lt_add_right _ (hbounded.2 i hi)) ςs.srcs φ.paramNames φ.arity
     (Expr.callSels φ)
     (fun types => .call f (TyArgs.tyParams types) (Term.ofVars φ.paramNames)) (TeleArg.replicate _ Ty.unit)
     (srcs_ok hvalid) (sels_eq_callSels hcons ▸ selsOk hvalid hbounded hcons) le_rfl).2.2.2.1
@@ -714,15 +714,15 @@ of the latter, and so is its body as soon as the picked sources name their type 
 the order of the anonymous form of the constructor they produce. -/
 theorem callSource_spec (hvalid : ∀ τ ς, (τ, ς) ∈ ςs → ς.Valid Λ τ)
     (hord : ∀ τ ς, (τ, ς) ∈ ςs → ς.src.fn.ty.InAnonOrder) (hbounded : φ.Bounded)
-    (hcons : ςs.tyCons = φ.template.paramCons) (types : RUXt.TyArgs (φ.tyArity + ςs.freeArity)) :
+    (hcons : ςs.tyCons = φ.template.paramCons) (types : RUXt.TyArgs (φ.arity + ςs.freeArity)) :
     BindCallSourcesSpec Λ φ f ςs types := by
   have hparams := callSource_params φ f ςs
-    (fun types : RUXt.TyArgs (φ.tyArity + ςs.freeArity) =>
+    (fun types : RUXt.TyArgs (φ.arity + ςs.freeArity) =>
       .call f (TyArgs.tyParams types) (Term.ofVars φ.paramNames))
   obtain ⟨-, -, hfresh, -, hsafe⟩ :=
     Expr.bindSourcesAux_spec (Λ := Λ)
     (PVar.freshen_spec (m := max (RUXt.maxNameLen φ.paramNames) ςs.maxNameLen))
-    (fun i hi => Nat.lt_add_right _ (hbounded.2 i hi)) ςs.srcs φ.paramNames φ.tyArity
+    (fun i hi => Nat.lt_add_right _ (hbounded.2 i hi)) ςs.srcs φ.paramNames φ.arity
     (Expr.callSels φ)
     (fun types => .call f (TyArgs.tyParams types) (Term.ofVars φ.paramNames)) types
     (srcs_ok hvalid) (sels_eq_callSels hcons ▸ selsOk hvalid hbounded hcons) le_rfl
@@ -757,7 +757,7 @@ theorem callSource_spec (hvalid : ∀ τ ς, (τ, ς) ∈ ςs → ς.Valid Λ τ
 the type arguments it is instantiated at. -/
 theorem callSource_params_valid (hvalid : ∀ τ ς, (τ, ς) ∈ ςs → ς.Valid Λ τ)
     (hbounded : φ.Bounded) (hcons : ςs.tyCons = φ.template.paramCons)
-    (types : RUXt.TyArgs (φ.tyArity + ςs.freeArity)) :
+    (types : RUXt.TyArgs (φ.arity + ςs.freeArity)) :
     ((φ.callSource f ςs).fn).ValidTyCons types :=
   (callSource_valid φ f ςs hvalid hbounded hcons).validTyCons types
 
@@ -774,7 +774,7 @@ theorem callSource_typechecks (hmaps : Λ.MapsTo f φ) (hsafe : φ.template.safe
   obtain hdupSrcs := φ.callSource_params_nodup f ςs hvalid hbounded hcons
   refine ⟨hmerge, fun types args => ?impl⟩
   obtain hty := (callSource_spec φ f ςs hvalid hord hbounded hcons types).resTy_apply_eq
-  obtain hinst := Λ.instantiates_concretise hmaps (types.splitUniform φ.tyArity ςs.freeArity).1
+  obtain hinst := Λ.instantiates_concretise hmaps (types.splitUniform φ.arity ςs.freeArity).1
   refine ⟨?safe, FunDecl.callSource_safe φ f ςs, ?nodup⟩
   case nodup =>
     simp only [FunImpl.ParamsNodup, FunImpl.paramNames, FunTempl.concretise_params,
@@ -791,8 +791,8 @@ theorem callSource_typechecks (hmaps : Λ.MapsTo f φ) (hsafe : φ.template.safe
       exact hdupSrcs
     case hcall =>
       rw [hty, ← FunDecl.paramNames_concretise
-          (tyargs := (types.splitUniform φ.tyArity ςs.freeArity).1),
-        ← φ.concretise_ty (types.splitUniform φ.tyArity ςs.freeArity).1]
+          (tyargs := (types.splitUniform φ.arity ςs.freeArity).1),
+        ← φ.concretise_ty (types.splitUniform φ.arity ςs.freeArity).1]
       refine safeProgram_subset (safe_call hinst hsafe) ?_
       rw [FunDecl.paramNames_concretise, FunDecl.paramTypes_concretise]
       exact VarCtx.from_subset_extend _ hdup
@@ -806,7 +806,7 @@ the picked summaries own, reproduces the behaviour of the call on the results of
 sources. -/
 theorem callSource_frameStep {Λ : Library} (φ : FunDecl) (f : Fid) (ςs : Picks)
     (args : TeleArg ςs.teleOf)
-    (S : SubvArgs.{0} (φ.tyArity + ςs.freeArity))
+    (S : SubvArgs.{0} (φ.arity + ςs.freeArity))
     (values : TeleArg (Tele.uniform Val ςs.valArity))
     (rvals : TeleArg (Tele.uniform Val ςs.size))
     (hF h h' : Heap) (εₛ : Exit)
@@ -816,11 +816,11 @@ theorem callSource_frameStep {Λ : Library} (φ : FunDecl) (f : Fid) (ςs : Pick
     (hdup : φ.paramNames.Nodup) (hlen : ςs.length ≤ φ.paramNames.length)
     (hdisj : hF ##ₘ h)
     (hpost : HProp h
-      (PolyAsrt.at (ςs.mergeOwned Λ φ.tyArity) (args |>.app values |>.app rvals) S))
+      (PolyAsrt.at ςs.mergeOwned (args |>.app values |>.app rvals) S))
     (hstep : Λ ⊢ ⟨hF ∪ h |
-      (Expr.call f (S.tys.splitUniform φ.tyArity ςs.freeArity).1.toList
+      (Expr.call f (S.tys.splitUniform φ.arity ςs.freeArity).1.toList
         (Term.ofVars φ.paramNames)).substs φ.paramNames
-        (Term.ofVals ((ςs.mergeVals Λ φ.tyArity S).at
+        (Term.ofVals ((ςs.mergeVals S).at
         (args |>.app values |>.app rvals)))⟩ ⇓ᵢ ⟨h' | εₛ⟩) :
     ∃ hp, HProp hp (((φ.callSource f ςs).fn).ownVals (fun C => C.ownsAt Λ S)
         values.toList)
@@ -837,13 +837,13 @@ theorem callSource_frameStep {Λ : Library} (φ : FunDecl) (f : Fid) (ςs : Pick
   have hv : values.toList = values'.toList := by
     rw [hvalues', TeleArg.toList_transport]
   obtain ⟨g, hruns⟩ :=
-    mergeOwned_runs ςs φ.tyArity args S values values' rvals h hv hvalid hord
+    mergeOwned_runs ςs φ.arity args S values values' rvals h hv hvalid hord
       (params_lt_of_picks φ ςs hbounded hcons) hpost
   rw [sels_eq_callSels hcons] at hruns
   obtain ⟨hpre, hdisjg, hchain⟩ := Expr.bindSourcesAux_frameStep
     (PVar.freshen_spec (m := max (RUXt.maxNameLen φ.paramNames) ςs.maxNameLen))
     (fun i hi => Nat.lt_add_right _ (hbounded.2 i hi)) ςs.srcs φ.paramNames (fun _ => 0)
-    φ.tyArity (Expr.callSels φ)
+    φ.arity (Expr.callSels φ)
     (fun types => .call f (TyArgs.tyParams types) (Term.ofVars φ.paramNames))
     args S.tys values' _ g hF h h' εₛ (srcs_ok hvalid)
     (fun s hs y hy => le_trans (Picks.le_maxNameLen hs hy) (le_max_right _ _))
@@ -856,7 +856,7 @@ theorem callSource_frameStep {Λ : Library} (φ : FunDecl) (f : Fid) (ςs : Pick
     hdisj hruns hstep
   rw [← hv] at hpre hchain
   have hparams := callSource_params φ f ςs
-    (fun types : RUXt.TyArgs (φ.tyArity + ςs.freeArity) =>
+    (fun types : RUXt.TyArgs (φ.arity + ςs.freeArity) =>
       .call f (TyArgs.tyParams types) (Term.ofVars φ.paramNames))
   refine ⟨g, ?_, hdisjg, ?_⟩
   · rw [FunTempl.ownVals, FunTempl.paramCons_congr hparams]
@@ -907,7 +907,7 @@ theorem source_reachable {L : Logic.{0}} (hL : L.Sound) {Λ : Library} {S : Summ
     {ςs : Picks} {f : Fid} {φ : FunDecl} (hmaps : Λ.MapsTo f φ) (hsafe : φ.template.safe)
     (hsumm : SummCtx.Valid Λ S) (hordS : ∀ τ ς, S.MemTy τ ς → ς.src.fn.ty.InAnonOrder)
     (hpicks : φ.SafePicks S ςs)
-    {ε : LExit} {Ψ : ςs.DerivedPost φ.tyArity} {Ψ' : φ.Subvariant ςs}
+    {ε : LExit} {Ψ : ςs.DerivedPost φ.arity} {Ψ' : φ.Subvariant ςs}
     (hcall : ςs.DerivableCall L Λ f ε Ψ)
     (hequiv : Ψ.SimplifiesTo semSolver Ψ') :
     (φ.summary f ςs Ψ').Reachable Λ φ.template.ty ε := by
@@ -934,9 +934,9 @@ theorem source_reachable {L : Logic.{0}} (hL : L.Sound) {Λ : Library} {S : Summ
     rw [Picks.mergeCall_eq, Picks.mergeTys, teleLift_at] at hstep
     simp only [TyArgs.tyParams] at hstep
     have hstep' : Λ ⊢ ⟨∅ ∪ h |
-        (Expr.call f ((SubvArgs.tys Ss).splitUniform φ.tyArity ςs.freeArity).1.toList
+        (Expr.call f ((SubvArgs.tys Ss).splitUniform φ.arity ςs.freeArity).1.toList
             (Term.ofVars φ.paramNames)).substs φ.paramNames
-          (Term.ofVals ((ςs.mergeVals Λ φ.tyArity Ss).at (args'.app rvals)))⟩ ⇓ᵢ ⟨h' | εₛ⟩ := by
+          (Term.ofVals ((ςs.mergeVals Ss).at (args'.app rvals)))⟩ ⇓ᵢ ⟨h' | εₛ⟩ := by
       rw [PFun.empty_union, Expr.substs_call
         (by rw [Picks.mergeVals_length]; exact hlenγ.symm) hdup]
       exact hstep
