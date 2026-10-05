@@ -218,7 +218,6 @@ def Expr.subst (e : Expr) (bx : Binder) (v : Val) : Expr :=
 def Expr.substs (e : Expr) (xs : List PVar) (ts : List Term) : Expr :=
   (xs.zip ts).foldl (fun e (x, t) => e.substTerm x t) e
 
-
 /-! ## Properties -/
 
 namespace Term

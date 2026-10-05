@@ -18,11 +18,13 @@ namespace RUXt
 /-- A type assignment in the library can be refuted: the refutation is carried out in some
 **sound** program logic `L` (`Logic.Sound`), which is all a refutation is worth. -/
 def Library.HasRefutedType (Λ : Library) (e : Expr) : Prop :=
-  ∃ L : Logic.{0}, L.Sound ∧
-    ∃ S, WfSummCtx L semSolver Λ S ∧ ∃ τ, Λ.TryRefute L semSolver S τ (.inr e)
+  ∃ L : Logic.{0}, L.Sound ∧ ∃ S, WfSummCtx L semSolver Λ S ∧
+  ∃ τ, Λ.TryRefute L semSolver S τ (.inr e)
+
 /-- A main program exhibits undefined behaviour. -/
 def Library.Inadequate (Λ : Library) (e : Expr) : Prop :=
   ∃ τ, SafeMain Λ τ e ∧ ∃ h, Λ ⊢ ⟨∅ | e⟩ ⇓ ⟨h | .err⟩
+
 /-! ## Properties
 
 ### The specialisation rule can fire

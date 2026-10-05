@@ -1,6 +1,6 @@
 # RUXt: Lean Formalisation
 
-A Lean 4 formalisation of RUXt: a refutation algorithm for the type unsoundness of generic Rust libraries, built on under-approximate (UX) reasoning. Its implementation is in the [`ruxt`](https://github.com/pcarrott/soteria/tree/ruxt-dev/ruxt) directory of the `ruxt-dev` branch of [pcarrott/soteria](https://github.com/pcarrott/soteria/tree/ruxt-dev), and it runs on real Rust code. This project formalises that algorithm and proves it correct for a small Rust-like core language with generic functions, a block-based heap and explicit allocation and deallocation.
+A Lean 4 formalisation of [RUXt](https://github.com/pcarrott/soteria/tree/ruxt-dev/ruxt): a refutation algorithm for the type unsoundness of generic Rust libraries, built on under-approximate (UX) reasoning. This project formalises that algorithm and proves it correct for a small Rust-like core language with generic functions, a block-based heap and explicit (de)allocation.
 
 ## Building
 
