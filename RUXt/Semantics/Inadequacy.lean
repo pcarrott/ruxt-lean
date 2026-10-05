@@ -18,8 +18,7 @@ namespace RUXt
 /-- A type assignment in the library can be refuted: the refutation is carried out in some
 **sound** program logic `L` (`Logic.Sound`), which is all a refutation is worth. -/
 def Library.HasRefutedType (Λ : Library) (e : Expr) : Prop :=
-  ∃ L : Logic.{0}, L.Sound ∧ ∃ S, WfSummCtx L semSolver Λ S ∧
-  ∃ τ, Λ.TryRefute L semSolver S τ (.inr e)
+  ∃ L, L.Sound ∧ ∃ S, WfSummCtx L semSolver Λ S ∧ Λ.TryRefute L semSolver S (.inr e)
 
 /-- A main program exhibits undefined behaviour. -/
 def Library.Inadequate (Λ : Library) (e : Expr) : Prop :=
@@ -72,7 +71,7 @@ theorem trySpecialise_id_unit (Λ : Library) :
 theorem wfSummCtx_base_specialise_id_unit (L : Logic.{0}) (Λ : Library) :
     WfSummCtx L semSolver Λ ((SummCtx.base Λ).update .unit
       ((Summary.id Λ).specialise 0 .unit [Summary.base .unit])) :=
-  .specialise .nil (trySpecialise_id_unit Λ)
+  .specialise .base (trySpecialise_id_unit Λ)
 
 /-- The specialisation rule applies at a type constructor with type parameters of its own: the
 type parameter of the identity summary may be pinned to a type parameter `T` — the identity
@@ -120,7 +119,7 @@ theorem trySpecialise_id_param (Λ : Library) :
 theorem wfSummCtx_base_specialise_id_param (L : Logic.{0}) (Λ : Library) :
     WfSummCtx L semSolver Λ ((SummCtx.base Λ).update (.param 0)
       ((Summary.id Λ).specialise 0 (.param 0) [Summary.id Λ])) :=
-  .specialise .nil (trySpecialise_id_param Λ)
+  .specialise .base (trySpecialise_id_param Λ)
 
 /-! ### Every summary of a well-formed type space is in anonymous order
 
@@ -144,9 +143,9 @@ theorem SummCtx.base_inAnonOrder {Λ : Library} {τ : TyConsId} {ς : Summary}
 constructor it produces: that constructor is the result type constructor of the called
 function, which the library orders that way. -/
 theorem Library.tryRefute_inAnonOrder {Λ : Library} {L : Logic.{0}} {Θ : Solver} {S : SummCtx}
-    {τ : TyConsId} {ς : Summary} (h : Λ.TryRefute L Θ S τ (.inl ς)) :
+    {τ : TyConsId} {ς : Summary} (h : Λ.TryRefute L Θ S (.inl (τ, ς))) :
     ς.src.fn.ty.InAnonOrder := by
-  obtain ⟨f, φ, hmaps, -, -, ςs, -, -, -, -, -, -, -, -, rfl⟩ := h
+  obtain ⟨f, φ, hmaps, -, ςs, -, -, -, -, -, -, -, -, -, ⟨-, rfl⟩⟩ := h
   show (φ.callSource f ςs).fn.ty.InAnonOrder
   rw [FunDecl.callSource_ty]
   exact Λ.tyParamsOrdered f φ hmaps
@@ -156,8 +155,8 @@ constructor it produces.** -/
 theorem WfSummCtx.inAnonOrder {L : Logic.{0}} {Θ : Solver} {Λ : Library} {S : SummCtx}
     (h : WfSummCtx L Θ Λ S) : ∀ τ ς, S.MemTy τ ς → ς.src.fn.ty.InAnonOrder := by
   induction h with
-  | nil => exact fun _ _ hin => SummCtx.base_inAnonOrder hin
-  | cons _ hrefute ih =>
+  | base => exact fun _ _ hin => SummCtx.base_inAnonOrder hin
+  | infer _ hrefute ih =>
     intro τ' ς' hin
     rcases SummCtx.mem_update hin with ⟨-, rfl⟩ | hin
     · exact Library.tryRefute_inAnonOrder hrefute
@@ -175,10 +174,10 @@ theorem WfSummCtx.inAnonOrder {L : Logic.{0}} {Θ : Solver} {Λ : Library} {S : 
 theorem summCtx_soundness {L : Logic.{0}} (hL : L.Sound) {Λ : Library} {S : SummCtx}
     (hsumm : WfSummCtx L semSolver Λ S) : S.Valid Λ := by
   induction hsumm with
-  | nil => exact SummCtx.base_valid
-  | cons hwf hrefute hctx =>
-    obtain ⟨f, φ, hmaps, rfl, hsafe, ςs, hpicks,
-      ε, Ψ, hcall, Ψ', hequiv, hsat, ⟨rfl, rfl⟩
+  | base => exact SummCtx.base_valid
+  | infer hwf hrefute hctx =>
+    obtain ⟨f, φ, hmaps, hsafe, ςs, hpicks,
+      ε, Ψ, hcall, Ψ', hequiv, hsat, ⟨rfl, ⟨rfl, rfl⟩⟩
     ⟩ := hrefute
     replace hsat := (semSolver_sat_owned_symAsrt (ς := φ.summary f ςs Ψ')).mp hsat
     intro τ' ς' hin
@@ -222,7 +221,7 @@ the model exhibits a state in which the error postcondition holds, reached from 
 let-bound programs build up (`Summary.witness_frameStep`). -/
 theorem inadequacy {Λ : Library} {e : Expr}
     (hrefuted : Λ.HasRefutedType e) : Λ.Inadequate e := by
-  obtain ⟨L, hL, Sctx, hwf, τ, f, φ, hmaps, rfl, hsafe, ςs, hpicks,
+  obtain ⟨L, hL, Sctx, hwf, f, φ, hmaps, hsafe, ςs, hpicks,
     εₗ, Ψ, hcall, Ψ', hequiv, hsatOwned, Hnok, P, hP, margs, hmodel, rfl
   ⟩ := hrefuted
   obtain ⟨res, vs, hmodel⟩ := semSolver_model_typedSymAsrt.mp hmodel

@@ -60,8 +60,8 @@ theorem boxPost_simplifiesTo : boxPost.SimplifiesTo semSolver boxSubv :=
 def boxSumm : Summary := boxDecl.summary "box" ςsBox boxSubv
 def boxCtx : SummCtx := SummCtx.update (SummCtx.base boxLib) .boxT boxSumm
 
-theorem tryRefute_box : boxLib.TryRefute risl semSolver (SummCtx.base boxLib) .boxT (.inl boxSumm) := by
-  refine ⟨"box", boxDecl, boxLib_box, rfl, rfl, ςsBox, ⟨by decide, ?summIncl⟩,
+theorem tryRefute_box : boxLib.TryRefute risl semSolver (SummCtx.base boxLib) (.inl (.boxT, boxSumm)) := by
+  refine ⟨"box", boxDecl, boxLib_box, rfl, ςsBox, ⟨by decide, ?summIncl⟩,
     .lok, boxPost, ?derivPost, boxSubv, boxPost_simplifiesTo,
     ?satPost, rfl, rfl⟩
   case summIncl =>
@@ -166,8 +166,8 @@ theorem reboxPost_simplifiesTo : reboxPost.SimplifiesTo semSolver reboxSubv :=
 def reboxSumm : Summary := reboxDecl.summary "rebox" ςsRebox reboxSubv
 def reboxCtx : SummCtx := SummCtx.update boxCtx .boxT reboxSumm
 
-theorem tryRefute_rebox : boxLib.TryRefute risl semSolver boxCtx .boxT (.inl reboxSumm) := by
-  refine ⟨"rebox", reboxDecl, boxLib_rebox, rfl, rfl, ςsRebox, ⟨by decide, ?summIncl⟩,
+theorem tryRefute_rebox : boxLib.TryRefute risl semSolver boxCtx (.inl (.boxT, reboxSumm)) := by
+  refine ⟨"rebox", reboxDecl, boxLib_rebox, rfl, ςsRebox, ⟨by decide, ?summIncl⟩,
     .lok, reboxPost, ?derivPost, reboxSubv, reboxPost_simplifiesTo,
     ?satPost, rfl, rfl⟩
   case summIncl =>
@@ -336,8 +336,8 @@ theorem wfSpec_cycleBody (A : Val → TypedSubvariants.{0} → Asrt.{0}) :
     exact hProp_star_emp_intro (hPure_star_intro hrv
       (hProp_star_star_intro hpt₂ hpt₁ hopP d12.symm dop2.symm d1o))
 
-theorem tryRefute_cycle : boxLib.TryRefute risl semSolver reboxCtx .boxT (.inl cycleSumm) := by
-  refine ⟨"cycle", cycleDecl, boxLib_cycle, rfl, rfl, ςsCycle, ⟨by decide, ?summIncl⟩,
+theorem tryRefute_cycle : boxLib.TryRefute risl semSolver reboxCtx (.inl (.boxT, cycleSumm)) := by
+  refine ⟨"cycle", cycleDecl, boxLib_cycle, rfl, ςsCycle, ⟨by decide, ?summIncl⟩,
     .lok, cyclePost, ?derivPost, cycleSubv, cyclePost_simplifiesTo,
     ?satPost, rfl, rfl⟩
   case summIncl =>
@@ -770,8 +770,8 @@ theorem safePicks_drop : dropDecl.SafePicks cycleCtx ςsDrop := by
   obtain ⟨rfl, rfl⟩ := h
   simp [cycleCtx, SummCtx.update, SummCtx.MemTy]
 
-theorem tryRefute_drop : boxLib.TryRefute risl semSolver cycleCtx .unit (.inr boxSourceExpr) := by
-  refine ⟨"drop", dropDecl, boxLib_drop, rfl, rfl, ςsDrop, safePicks_drop,
+theorem tryRefute_drop : boxLib.TryRefute risl semSolver cycleCtx (.inr boxSourceExpr) := by
+  refine ⟨"drop", dropDecl, boxLib_drop, rfl, ςsDrop, safePicks_drop,
     .lerr, dropPost, ?derivPost, dropSubv, dropPost_simplifiesTo,
     ?satPost,
     by simp, TypePicks.unit (dropDecl.callSource "drop" ςsDrop), ?picksOk,
@@ -840,11 +840,11 @@ theorem tryRefute_drop : boxLib.TryRefute risl semSolver cycleCtx .unit (.inr bo
 /-- The type space `cycleCtx` is well formed: it is reached from the base one by the three
 derivation steps above. -/
 theorem wfSummCtx_cycleCtx : WfSummCtx risl semSolver boxLib cycleCtx :=
-  ((WfSummCtx.nil.cons tryRefute_box).cons tryRefute_rebox).cons tryRefute_cycle
+  ((WfSummCtx.base.infer tryRefute_box).infer tryRefute_rebox).infer tryRefute_cycle
 
 /-- The refutation of the unit type constructor in the `Box` library. -/
 theorem hasRefutedType_boxSourceExpr : boxLib.HasRefutedType boxSourceExpr :=
-  ⟨risl, risl_sound, cycleCtx, wfSummCtx_cycleCtx, .unit, tryRefute_drop⟩
+  ⟨risl, risl_sound, cycleCtx, wfSummCtx_cycleCtx, tryRefute_drop⟩
 
 /-- **The `Box` library is inadequate**: `drop(cycle(rebox(box(unit))))` is a well-typed
 main program whose execution reads an already freed cell of the cyclic box. -/

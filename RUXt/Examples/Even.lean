@@ -111,8 +111,8 @@ def evenSumm : Summary := newDecl.summary "new" ςs1 evenSubv
 /-- Context after adding the even summary. -/
 def evenCtx : SummCtx := SummCtx.update (SummCtx.base evenLib) .even evenSumm
 
-theorem tryRefute_even : evenLib.TryRefute risl semSolver (SummCtx.base evenLib) .even (.inl evenSumm) := by
-  refine ⟨"new", newDecl, evenLib_new, rfl, rfl, ςs1, ⟨by decide, ?summIncl⟩,
+theorem tryRefute_even : evenLib.TryRefute risl semSolver (SummCtx.base evenLib) (.inl (.even, evenSumm)) := by
+  refine ⟨"new", newDecl, evenLib_new, rfl, ςs1, ⟨by decide, ?summIncl⟩,
     .lok, evenPost, ?derivPost, evenSubv, evenPost_simplifiesTo,
     ?satPost, rfl, rfl⟩
   case summIncl =>
@@ -180,8 +180,8 @@ def oddSumm : Summary := succDecl.summary "succ" ςs2 oddSubv
 /-- Context after adding the odd summary. -/
 def oddCtx : SummCtx := SummCtx.update evenCtx .even oddSumm
 
-theorem tryRefute_odd : evenLib.TryRefute risl semSolver evenCtx .even (.inl oddSumm) := by
-  refine ⟨"succ", succDecl, evenLib_succ, rfl, rfl, ςs2, ⟨by decide, ?summIncl⟩,
+theorem tryRefute_odd : evenLib.TryRefute risl semSolver evenCtx (.inl (.even, oddSumm)) := by
+  refine ⟨"succ", succDecl, evenLib_succ, rfl, ςs2, ⟨by decide, ?summIncl⟩,
     .lok, oddPost, ?derivPost, oddSubv, oddPost_simplifiesTo,
     ?satPost, rfl, rfl⟩
   case summIncl =>
@@ -258,8 +258,8 @@ theorem safePicks_noop : noopDecl.SafePicks oddCtx ςs3 := by
   obtain ⟨rfl, rfl⟩ := h
   simp [oddCtx, SummCtx.update, SummCtx.MemTy]
 
-theorem tryRefute_noop : evenLib.TryRefute risl semSolver oddCtx .unit (.inr sourceExpr) := by
-  refine ⟨"noop", noopDecl, evenLib_noop, rfl, rfl, ςs3, safePicks_noop,
+theorem tryRefute_noop : evenLib.TryRefute risl semSolver oddCtx (.inr sourceExpr) := by
+  refine ⟨"noop", noopDecl, evenLib_noop, rfl, ςs3, safePicks_noop,
     .lerr, noopPost, ?derivPost, noopSubv, noopPost_simplifiesTo,
     ?satPost,
     by simp, TypePicks.unit (noopDecl.callSource "noop" ςs3), ?picksOk,
@@ -339,11 +339,11 @@ theorem tryRefute_noop : evenLib.TryRefute risl semSolver oddCtx .unit (.inr sou
 /-- The type space `oddCtx` is well formed: it is reached from the base one by the two derivation
 steps above. -/
 theorem wfSummCtx_oddCtx : WfSummCtx risl semSolver evenLib oddCtx :=
-  (WfSummCtx.nil.cons tryRefute_even).cons tryRefute_odd
+  (WfSummCtx.base.infer tryRefute_even).infer tryRefute_odd
 
 /-- The refutation of the unit type constructor in the `Even` library. -/
 theorem hasRefutedType_sourceExpr : evenLib.HasRefutedType sourceExpr :=
-  ⟨risl, risl_sound, oddCtx, wfSummCtx_oddCtx, .unit, tryRefute_noop⟩
+  ⟨risl, risl_sound, oddCtx, wfSummCtx_oddCtx, tryRefute_noop⟩
 
 /-- **The `Even` library is inadequate**: `noop(succ(new(0)))` is a well-typed
 main program that exhibits undefined behaviour. -/

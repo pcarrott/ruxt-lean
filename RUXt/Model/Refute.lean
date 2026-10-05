@@ -14,13 +14,14 @@ its satisfiability and simplification queries.
 namespace RUXt
 
 /-- The refutation procedure, in the program logic `L`, with the checks on assertions
-answered by the solver `Θ`.  It derives a summary of a call to a function producing `τ` on
-summaries of the type space `S`; in the ok case the result is that summary, and in the error
-case it is a witness program of type unsoundness. -/
+answered by the solver `Θ`. It derives a summary of a call to a safe function on
+summaries of the type spaces in `S`; in the ok case the result is a type constructor paired
+with a derived summary and in the error case it is a witness program of type
+unsoundness. -/
 def Library.TryRefute (Λ : Library) (L : Logic.{0}) (Θ : Solver) (S : SummCtx)
-    (τ : TyConsId) (r : Summary ⊕ Expr) : Prop :=
-  -- Pick `safe` function `f` that outputs values of type constructor `τ`
-  ∃ f φ, Λ.MapsTo f φ ∧ φ.template.ty = τ ∧ φ.template.safe ∧
+    (r : (TyConsId × Summary) ⊕ Expr) : Prop :=
+  -- Pick `safe` function `f`
+  ∃ f φ, Λ.MapsTo f φ ∧ φ.template.safe ∧
   -- Pick input summaries `ςs` from `S` fitting the parameters of `f`
   ∃ ςs, φ.SafePicks S ςs ∧
   -- Postcondition `[ε : Ψ]` is obtained from executing `f` on inputs `ςs`
@@ -33,8 +34,10 @@ def Library.TryRefute (Λ : Library) (L : Logic.{0}) (Θ : Solver) (S : SummCtx)
   let src := φ.callSource f ςs
   -- Case analysis on whether the derived state is Ok
   match r with
-  -- Case Ok: The result is the new summary, with postcondition `Φ` and source `src`
-  | .inl ς => ε = .lok ∧ ς = ⟨Φ, src.fn⟩
+  -- Case Ok: The result is a new summary filed for the output type of `f`
+  | .inl ς => ε = .lok ∧
+      -- Postcondition `Φ` is reachable from source `src`
+      ς = ⟨φ.template.ty, ⟨Φ, src.fn⟩⟩
   -- Cases Err/Miss: Found the source for type unsoundness
   | .inr e => ε ≠ .lok ∧
       -- For each type parameter of the source, pick a type and summary from `S`
@@ -68,10 +71,10 @@ def SummCtx.TrySpecialise (S : SummCtx) (Θ : Solver)
 steps being taken in the program logic `L` and the checks on assertions answered by the
 solver `Θ`. -/
 inductive WfSummCtx (L : Logic.{0}) (Θ : Solver) (Λ : Library) : SummCtx → Prop
-  | nil :
+  | base :
       WfSummCtx L Θ Λ (.base Λ)
-  | cons {S : SummCtx} {τ : TyConsId} {ς : Summary} :
-      WfSummCtx L Θ Λ S → Λ.TryRefute L Θ S τ (.inl ς) →
+  | infer {S : SummCtx} {τ : TyConsId} {ς : Summary} :
+      WfSummCtx L Θ Λ S → Λ.TryRefute L Θ S (.inl ⟨τ, ς⟩) →
       WfSummCtx L Θ Λ (S.update τ ς)
   | specialise {S : SummCtx} {τ : TyConsId} {ς : Summary} :
       WfSummCtx L Θ Λ S → S.TrySpecialise Θ τ ς →
