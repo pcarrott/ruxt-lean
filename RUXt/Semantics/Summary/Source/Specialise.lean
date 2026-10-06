@@ -215,7 +215,7 @@ theorem bindSources_cons (types : TyArgs N) (body : Expr) (params : List (PVar �
     (free : TyArgs (mergedFreeArity (s :: srcs))) (args : TeleArg (mergedTeleOf (s :: srcs))) :
     Expr.bindSources m types body params (s :: srcs) free args
       = .letIn (.named (params.headD ("unreachable", .unit)).1)
-          ((s.fn.body.apply args.fst).apply
+          (s.fn.body args.fst
               (((types.reindex Ty.unit ((params.headD ("unreachable", .unit)).2.params.getD · 0)
                   (params.headD ("unreachable", .unit)).2.arity)
                 |>.appendUniform (free.splitUniform s.freeArity _).1).reindex Ty.unit id s.arity)
@@ -260,8 +260,8 @@ theorem bindSources_eq (t : TyArgs N → Expr) (types : TyArgs N) :
         ∧ s.fn.ty.Bounded s.arity) srcs params →
       (∀ j < mergedFreeArity srcs, free.get j = types.get (base + j)) →
       Expr.bindSources m types (t types) params srcs free args
-        = ((bindSourcesAux t (PVar.freshen m) (params.map Prod.fst) rty base
-            ((params.map Prod.snd).map TyConsId.params) srcs).body.apply args).apply types
+        = (bindSourcesAux t (PVar.freshen m) (params.map Prod.fst) rty base
+            ((params.map Prod.snd).map TyConsId.params) srcs).body args types
   | _, _, [], _, _, _, _ => by rw [Expr.bindSourcesAux_nil_body]; rfl
   | [], _, _ :: _, _, _, hfit, _ => by cases hfit
   | (x, τ) :: params, base, s :: srcs, free, args, hfit, hfree => by
@@ -329,11 +329,12 @@ theorem specialise_body_apply (hlen : (ςs.map Summary.src).length = (s.specPara
       s'.fn.ty.InAnonOrder ∧ s'.fn.ty.arity = τ.arity ∧ s'.fn.ty.Bounded s'.arity)
     (args : TeleArg (specialise m s i τ ςs).teleOf)
     (types : TyArgs (s.arity - 1 + τ.arity + mergedFreeArity (ςs.map Summary.src))) :
-    (((specialise m s i τ ςs).fn.body.apply args).apply types)
-      = (((bindSourcesAux (N := s.arity - 1 + τ.arity + mergedFreeArity (ςs.map Summary.src))
-            (fun types => (s.fn.body.apply args.fst).apply (s.specTyArgs i τ types))
+    ((specialise m s i τ ςs).fn.body args types)
+      = ((bindSourcesAux (N := s.arity - 1 + τ.arity + mergedFreeArity (ςs.map Summary.src))
+            (fun types => s.fn.body args.fst (s.specTyArgs i τ types))
             (PVar.freshen m) (s.specVars i) (s.fn.ty.substCons (TyConsId.specSubst i τ))
-            (s.arity - 1 + τ.arity) (s.specSels i τ) (ςs.map Summary.src)).body.apply args.snd).apply types) := by
+            (s.arity - 1 + τ.arity) (s.specSels i τ) (ςs.map Summary.src)).body
+              args.snd types) := by
   have hfit : List.Forall₂ (fun s' p => s'.fn.ty.InAnonOrder ∧ s'.fn.ty.arity = p.2.arity
       ∧ s'.fn.ty.Bounded s'.arity) (ςs.map Summary.src) (s.pinnedParams i τ).1 := by
     refine List.forall₂_iff_get.mpr ⟨by simp [pinnedParams_fst, hlen], fun k h₁ h₂ => ?_⟩
@@ -342,10 +343,10 @@ theorem specialise_body_apply (hlen : (ςs.map Summary.src).length = (s.specPara
     simp only [List.get_eq_getElem, pinnedParams_fst, List.getElem_map]
     simpa using h2
   rw [← pinnedParams_fst_names (τ := τ), ← pinnedParams_fst_sels,
-    ← bindSources_eq (fun types => (s.fn.body.apply args.fst).apply (s.specTyArgs i τ types))
+    ← bindSources_eq (fun types => s.fn.body args.fst (s.specTyArgs i τ types))
       types _ _ (ςs.map Summary.src) _ args.snd hfit (fun j hj => by
         unfold TyArgs.get; exact TeleArg.getD_toList_block _ _ _ hj)]
-  simp only [specialise, teleBind_apply]
+  simp only [specialise]
   rfl
 
 variable {Λ : Library} {own : TyConsId → ℕ → Val → Asrt.{0}} {off : TyConsId → ℕ}
@@ -402,12 +403,12 @@ types, followed by the signature of the merged supplied sources. -/
 theorem specialise_sig (body : TyArgs (s.arity - 1 + τ.arity + mergedFreeArity (ςs.map Summary.src)) → Expr)
     (hlen : (ςs.map Summary.src).length = (s.specParams i).length)
     (types : TyArgs (s.arity - 1 + τ.arity + mergedFreeArity (ςs.map Summary.src))) :
-    (specialise m s i τ ςs).fn.sig.apply types
+    (specialise m s i τ ςs).fn.sig types
       = (s.restParams i).map (fun p =>
             (p.1, (p.2.substCons (TyConsId.specSubst i τ)).concretise types))
         ++ (bindSourcesAux body (PVar.freshen m) (s.specVars i)
             (s.fn.ty.substCons (TyConsId.specSubst i τ)) (s.arity - 1 + τ.arity) (s.specSels i τ)
-            (ςs.map Summary.src)).sig.apply types := by
+            (ςs.map Summary.src)).sig types := by
   rw [FunTempl.sig_apply_eq_map, FunTempl.sig_apply_eq_map, specialise_params body hlen,
     List.map_append, List.map_map]
   rfl
@@ -621,7 +622,7 @@ theorem specialise_typechecks (hs : s.Typechecks Λ) (hi : i < s.arity) (hτ : �
     rw [specVars, List.length_map, hlen]
   refine ⟨specialise_valid (m := m) hvalid hi hok hsel hlen, fun types args => ?_⟩
   let body (ts : TyArgs (s.arity - 1 + τ.arity + mergedFreeArity (ςs.map Summary.src))) :=
-    (s.fn.body.apply args.fst).apply (s.specTyArgs i τ ts)
+    s.fn.body args.fst (s.specTyArgs i τ ts)
   obtain ⟨-, -, hfreshP, hnodupP, hsafeT⟩ :=
     Expr.bindSourcesAux_spec (Λ := Λ) (m := m) PVar.freshen_spec hrty (ςs.map Summary.src)
       (s.specVars i) (s.arity - 1 + τ.arity) (s.specSels i τ) body types hok hsel (le_refl _)
@@ -630,7 +631,7 @@ theorem specialise_typechecks (hs : s.Typechecks Λ) (hi : i < s.arity) (hτ : �
     refine List.nodup_append.mpr ⟨hdup.sublist hRsub, hnodupP, fun y hy x hx => ?_⟩
     obtain ⟨j, z, -, rfl⟩ := hfreshP x hx
     exact PVar.freshen_spec.ne_short (hvarlen _ (hRsub.subset hy))
-  have hsigdup : (((specialise m s i τ ςs).fn.sig.apply types).map Prod.fst).Nodup := by
+  have hsigdup : (((specialise m s i τ ςs).fn.sig types).map Prod.fst).Nodup := by
     rwa [FunTempl.sig_map_fst]
   refine ⟨?safe, rfl, ?nodup⟩
   case nodup =>
@@ -695,7 +696,7 @@ theorem specialise_frameStep
     (hruns : Source.Runs Λ own types (ςs.map Summary.src) off (s.specSels i τ) (s.arity - 1 + τ.arity) syms'
       boundVals rs g h)
     (hstep : Λ ⊢ ⟨hF ∪ h |
-        ((s.fn.body.apply syms).apply (s.specTyArgs i τ types)).substs s.fn.paramNames
+        (s.fn.body syms (s.specTyArgs i τ types)).substs s.fn.paramNames
           (Term.ofVals (weaveVals i restVals rs s.fn.params))⟩ ⇓ᵢ ⟨h' | εₛ⟩) :
     HProp g (FunTempl.ownValsAt own off
             (bindSourcesAux (N := s.arity - 1 + τ.arity + mergedFreeArity (ςs.map Summary.src))
@@ -704,7 +705,7 @@ theorem specialise_frameStep
               (ςs.map Summary.src)).paramCons boundVals.toList)
       ∧ hF ##ₘ g
       ∧ Λ ⊢ ⟨hF ∪ g |
-          (((specialise m s i τ ςs).fn.body.apply (syms.app syms')).apply types).substs
+          ((specialise m s i τ ςs).fn.body (syms.app syms') types).substs
             (specialise m s i τ ςs).fn.paramNames
             (Term.ofVals (restVals ++ boundVals.toList))⟩ ⇓ᵢ ⟨h' | εₛ⟩ := by
   have hrty : (s.fn.ty.substCons (TyConsId.specSubst i τ)).Bounded
@@ -723,7 +724,7 @@ theorem specialise_frameStep
     rw [restVars, List.length_map, hrestlen]
   -- The body the merged sources are bound in front of.
   let body (ts : TyArgs (s.arity - 1 + τ.arity + mergedFreeArity (ςs.map Summary.src))) :=
-    ((s.fn.body.apply syms).apply (s.specTyArgs i τ ts)).substs (s.restVars i)
+    (s.fn.body syms (s.specTyArgs i τ ts)).substs (s.restVars i)
       (Term.ofVals restVals)
   have hbodyclosed (ts) : (body ts).Closed {y : PVar | y.length ≤ m} := by
     refine Expr.Closed.substs_erase (X := {y : PVar | y.length ≤ m}) ?_ hrestvars
@@ -742,7 +743,7 @@ theorem specialise_frameStep
     TeleArg.fst_append, TeleArg.snd_append,
     Expr.bindSourcesAux_substs PVar.freshen_spec (ςs.map Summary.src) (s.specVars i)
       (s.arity - 1 + τ.arity) (s.specSels i τ) syms' types hok hVle (s.restVars i) restVals
-      (fun ts => (s.fn.body.apply syms).apply (s.specTyArgs i τ ts))
+      (fun ts => s.fn.body syms (s.specTyArgs i τ ts))
       (fun x hx => restVars_notMem_specVars hdup hx) hRlen]
   exact hstep'
 

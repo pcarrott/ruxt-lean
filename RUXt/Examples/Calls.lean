@@ -26,42 +26,42 @@ abbrev callTele (ςs : Picks) (arity : ℕ) : Tele.{1} :=
 /-- The type arguments of the merged call, read off the telescope of the derived triple as a
 *well-sized* tuple: exactly the `arity` type parameters of the called function, taken from the
 types of the typed subvariants the call is made at. -/
-def callTyArgs (ςs : Picks) (arity : ℕ) : TeleLift (ςs.callTele arity) (TyArgs arity) :=
-  teleLift fun args => ((SubvArgs.tys args.snd).splitUniform arity ςs.freeArity).1
+def callTyArgs (ςs : Picks) (arity : ℕ) : TeleArg (ςs.callTele arity) → TyArgs arity :=
+  fun args => ((SubvArgs.tys args.snd).splitUniform arity ςs.freeArity).1
 
 /-- The input values of the merged call, read off the telescope of the derived triple as a
 *well-sized* tuple: exactly one value per picked summary. -/
 def callValArgs (ςs : Picks) (arity : ℕ) :
-    TeleLift (ςs.callTele arity) (ValArgs ςs.length) :=
-  teleLift fun args =>
-    TeleArg.ofListPad .unit ςs.length ((ςs.mergeVals args.snd).at args.fst.ulower)
+    TeleArg (ςs.callTele arity) → ValArgs ςs.length :=
+  fun args => TeleArg.ofListPad .unit ςs.length (ςs.mergeVals args.snd args.fst.ulower)
 
 /-- The type arguments of the merged call, as the list a call expression carries. -/
-def callTys (ςs : Picks) (arity : ℕ) : TeleLift (ςs.callTele arity) (List Ty) :=
-  (ςs.callTyArgs arity).toListLift
+def callTys (ςs : Picks) (arity : ℕ) : TeleArg (ςs.callTele arity) → List Ty :=
+  fun args => (ςs.callTyArgs arity args).toList
 
 /-- The input values of the merged call, as the list a call expression carries. -/
-def callVals (ςs : Picks) (arity : ℕ) : TeleLift (ςs.callTele arity) (List Val) :=
-  (ςs.callValArgs arity).toListLift
+def callVals (ςs : Picks) (arity : ℕ) : TeleArg (ςs.callTele arity) → List Val :=
+  fun args => (ςs.callValArgs arity args).toList
 
-@[simp] theorem callTys_at (ςs : Picks) (arity : ℕ) (args : TeleArg (ςs.callTele arity)) :
-    (ςs.callTys arity).at args = (ςs.mergeTys args.snd).at args.fst.ulower := by
-  rw [callTys, teleLift_at, callTyArgs, teleLift_at, mergeTys, teleLift_at, TyArgs.tyParams]
+@[simp] theorem callTys_apply (ςs : Picks) (arity : ℕ) (args : TeleArg (ςs.callTele arity)) :
+    ςs.callTys arity args = ςs.mergeTys args.snd args.fst.ulower := by
+  rw [callTys, callTyArgs, mergeTys, TyArgs.tyParams]
 
-@[simp] theorem callVals_at (ςs : Picks) (arity : ℕ)
+@[simp] theorem callVals_apply (ςs : Picks) (arity : ℕ)
     (args : TeleArg (ςs.callTele arity)) :
-    (ςs.callVals arity).at args = (ςs.mergeVals args.snd).at args.fst.ulower := by
-  rw [callVals, teleLift_at, callValArgs, teleLift_at,
+    ςs.callVals arity args = ςs.mergeVals args.snd args.fst.ulower := by
+  rw [callVals, callValArgs,
     TeleArg.toList_ofListPad _ (ςs.mergeVals_length args.snd args.fst.ulower)]
+
 
 /-- The program of the derived triple is the merged call, written with its type and value
 projections. -/
 theorem mergeCall_expr (ςs : Picks) (f : Fid) {arity : ℕ} :
     ςs.mergeCall f = SymExpr.call f (ςs.callTys arity) (ςs.callVals arity) :=
-  congrArg teleLift (funext fun args => by
+  funext fun args => by
     show Expr.call f (TyArgs.tyParams (SubvArgs.tys args.snd))
         (Term.ofVals (ςs.merge [] (fun _ r _ _ _ rs => r :: rs) args.snd args.fst.ulower)) = _
-    rw [callTys_at, callVals_at, mergeTys, mergeVals, teleLift_at, teleLift_at])
+    rw [SymExpr.call_apply, callTys_apply, callVals_apply, mergeTys, mergeVals]
 
 end Picks
 

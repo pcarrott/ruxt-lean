@@ -62,12 +62,12 @@ def paramNames (φ : FunDecl) : List PVar :=
 /-- The type obtained by instantiating the result type constructor of the template at the
 type arguments `tyargs`. -/
 def resTy (φ : FunDecl) (tyargs : φ.TyArgs) : Ty :=
-  φ.template.resTy.apply tyargs
+  φ.template.resTy tyargs
 /-- The types of the parameters, obtained by instantiating the type constructors of the
 parameters at the type arguments `tyargs`.  This is the input-side counterpart of
 `FunDecl.resTy`. -/
 def paramTypes (φ : FunDecl) (tyargs : φ.TyArgs) : List Ty :=
-  φ.template.paramTys.apply tyargs
+  φ.template.paramTys tyargs
 
 /-- Every type constructor a declaration mentions — those of its parameters and that of its
 result — only refers to its own type parameters. -/
@@ -90,7 +90,7 @@ instance (φ : FunDecl) : Decidable φ.TyParamsOrdered := by
 
 /-- The body of a declaration, instantiated at a tuple of type arguments. -/
 def bodyAt (φ : FunDecl) (tyargs : φ.TyArgs) : Expr :=
-  (φ.template.body.apply PUnit.unit).apply tyargs
+  φ.template.body PUnit.unit tyargs
 
 /-! ### Instantiation at a syntactic list of type arguments
 A call expression carries a *list* of type arguments; instantiating a declaration at such a
@@ -135,7 +135,7 @@ namespace FunDecl
     (φ.concretise tyargs).body = φ.bodyAt tyargs := rfl
 
 @[simp] theorem concretise_params (φ : FunDecl) (tyargs : φ.TyArgs) :
-    (φ.concretise tyargs).params = φ.template.sig.apply tyargs := rfl
+    (φ.concretise tyargs).params = φ.template.sig tyargs := rfl
 @[simp] theorem concretise_ty (φ : FunDecl) (tyargs : φ.TyArgs) :
     (φ.concretise tyargs).ty = φ.resTy tyargs := rfl
 

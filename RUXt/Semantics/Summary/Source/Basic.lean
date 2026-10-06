@@ -46,7 +46,7 @@ produce at the type arguments `types` of the template binding them. -/
 def resTys {N : ℕ} : (srcs : List Source) → List (List TyIdx) → ℕ → TyArgs N → List Ty
   | [], _, _, _ => []
   | s :: srcs, osels, base, types =>
-      s.fn.resTy.apply (s.tyArgs (osels.headD []) base types)
+      s.fn.resTy (s.tyArgs (osels.headD []) base types)
         :: resTys srcs osels.tail (base + s.freeArity) types
 
 /-- The sources `srcs`, bound one after the other from the free position `base` on, are
@@ -136,7 +136,7 @@ def Valid (φ : FunTempl tt arity) : Prop :=
 /-- Every parameter type of a template is one of the type arguments it is instantiated at,
 ruling out parameter types such as `List<U>`. -/
 def ValidTyCons (φ : FunTempl tt arity) (types : TyArgs arity) : Prop :=
-  ∀ x τ, (x, τ) ∈ φ.sig.apply types → τ ∈ types.toList
+  ∀ x τ, (x, τ) ∈ φ.sig types → τ ∈ types.toList
 
 end FunTempl
 /-! ### Typechecking templates -/
@@ -172,7 +172,7 @@ namespace Source
 theorem resTys_cons {N : ℕ} (s : Source) (srcs : List Source) (osels : List (List TyIdx))
     (base : ℕ) (types : TyArgs N) :
     resTys (s :: srcs) osels base types
-      = s.fn.resTy.apply (s.tyArgs (osels.headD []) base types)
+      = s.fn.resTy (s.tyArgs (osels.headD []) base types)
         :: resTys srcs osels.tail (base + s.freeArity) types := rfl
 
 theorem SelsOk.osel_lt {s : Source} {srcs : List Source} {osels : List (List TyIdx)} {base : ℕ}
@@ -447,17 +447,17 @@ def bindSourcesAux {N : ℕ} (body : TyArgs N → Expr)
     FunTempl (Source.mergedTeleOf srcs) N
   | [] =>
     { params := [], ty := τ, safe := .true
-      body := teleBind fun ⟨⟩ => teleBind fun types => body types }
+      body := fun _ types => body types }
   | s :: srcs =>
     let source :=
       bindSourcesAux body rename vars.tail τ (base + s.freeArity) osels.tail srcs
     let ρ := s.ren (osels.headD []) base
     let params := s.fn.params.map fun ⟨x, τ⟩ => ⟨rename srcs.length x, τ.rename ρ⟩
-    let body := teleBind fun args => teleBind fun types =>
-      let e := s.fn.body |>.apply args.fst |>.apply (TeleArg.reindex Ty.unit ρ s.arity types)
+    let body := fun args types =>
+      let e := s.fn.body args.fst (TeleArg.reindex Ty.unit ρ s.arity types)
         |>.bindAliases (rename srcs.length) s.fn.paramNames
       .letIn (.named (vars.headD "unreachable")) e
-        (source.body |>.apply args.snd |>.apply types)
+        (source.body args.snd types)
     { params := params ++ source.params, ty := source.ty, safe := .true, body := body }
 
 namespace FunTempl
@@ -471,7 +471,7 @@ theorem valid_congr {φ : FunTempl tt n} {ψ : FunTempl tt' n} (hp : φ.params =
 
 /-- The signature only depends on the parameters. -/
 theorem sig_congr {φ : FunTempl tt n} {ψ : FunTempl tt' n} (hp : φ.params = ψ.params)
-    (types : TyArgs n) : φ.sig.apply types = ψ.sig.apply types := by
+    (types : TyArgs n) : φ.sig types = ψ.sig types := by
   rw [sig_apply_eq_map, sig_apply_eq_map, hp]
 
 theorem paramNames_congr {φ : FunTempl tt n} {ψ : FunTempl tt' n} (hp : φ.params = ψ.params) :
@@ -497,9 +497,8 @@ variable {N : ℕ} {rename : ℕ → PVar → PVar} {vars : List PVar} {body : T
     (bindSourcesAux body rename vars rty base osels []).params = [] := rfl
 @[simp] theorem bindSourcesAux_nil_body (args : TeleArg (Source.mergedTeleOf []))
     (types : TyArgs N) :
-    ((bindSourcesAux body rename vars rty base osels []).body.apply args).apply types
-      = body types := by
-  rw [bindSourcesAux, teleBind_apply, teleBind_apply]
+    (bindSourcesAux body rename vars rty base osels []).body args types
+      = body types := rfl
 
 /-- The parameters of a merged source: those of the first source, renamed apart and with
 their type constructors embedded into the type parameters of the merged template, followed by
@@ -571,15 +570,12 @@ rebound to their renamed counterparts, is bound to the first variable, and the m
 remaining sources follows. -/
 theorem bindSourcesAux_cons_body (args : TeleArg (Source.mergedTeleOf (s :: srcs)))
     (types : TyArgs N) :
-    ((bindSourcesAux body rename vars rty base osels (s :: srcs)).body.apply args).apply types
+    (bindSourcesAux body rename vars rty base osels (s :: srcs)).body args types
       = Expr.letIn (.named (vars.headD "unreachable"))
-          (bindAliases (s.fn.body |>.apply args.fst |>.apply
-              (s.tyArgs (osels.headD []) base types))
+          (bindAliases (s.fn.body args.fst (s.tyArgs (osels.headD []) base types))
             (rename srcs.length) s.fn.paramNames)
-          (((bindSourcesAux body rename vars.tail rty (base + s.freeArity) osels.tail
-            srcs).body.apply args.snd).apply types) := by
-  rw [bindSourcesAux, teleBind_apply, teleBind_apply]
-  rfl
+          ((bindSourcesAux body rename vars.tail rty (base + s.freeArity) osels.tail
+            srcs).body args.snd types) := rfl
 
 /-- The parameters of a merged source — the renamed parameters of the sources it merges —
 depend on nothing but those sources, the renaming and the embedding of the type
@@ -617,11 +613,11 @@ theorem bindSourcesAux_paramCons_tail_irrel (t t' : TyArgs N → Expr) :
 /-- The signature of a merged source: the signature of the first source with its
 parameters renamed apart, followed by the signature of the merge of the remaining ones. -/
 theorem bindSourcesAux_cons_sig (hsrc : s.fn.Valid) (types : TyArgs N) :
-    (bindSourcesAux body rename vars rty base osels (s :: srcs)).sig.apply types
-      = ((s.fn.sig.apply (s.tyArgs (osels.headD []) base types)).map
+    (bindSourcesAux body rename vars rty base osels (s :: srcs)).sig types
+      = ((s.fn.sig (s.tyArgs (osels.headD []) base types)).map
           fun p => (rename srcs.length p.1, p.2))
         ++ (bindSourcesAux body rename vars.tail rty (base + s.freeArity) osels.tail
-            srcs).sig.apply types := by
+            srcs).sig types := by
   rw [FunTempl.sig_apply_eq_map, FunTempl.sig_apply_eq_map, FunTempl.sig_apply_eq_map,
     bindSourcesAux_cons_params, List.map_append, List.map_map, List.map_map]
   refine congrArg (· ++ _) (List.map_congr_left fun p hp => ?_)
@@ -698,7 +694,7 @@ theorem ty_bounded (h : s.Typechecks Λ) : s.fn.ty.Bounded s.arity := h.1.2
 embedded into those of the template binding it. -/
 theorem resTy_apply_eq {N : ℕ} (h : s.Typechecks Λ) (osel : List TyIdx) (base : ℕ)
     (types : TyArgs N) :
-    s.fn.resTy.apply (s.tyArgs osel base types) = s.resTyAt osel base types := by
+    s.fn.resTy (s.tyArgs osel base types) = s.resTyAt osel base types := by
   rw [FunTempl.resTy_apply, Source.tyArgs, Source.resTyAt,
     TyConsId.concretise_reindex _ _ types h.ty_bounded]
 
@@ -717,7 +713,7 @@ theorem paramNames_nodup (h : s.Typechecks Λ) (args : TeleArg s.teleOf) :
 /-- The body of a typechecking source only uses the parameters of that source. -/
 theorem body_closed (h : s.Typechecks Λ) (args : TeleArg s.teleOf)
     (types : TyArgs s.arity) :
-    ((s.fn.body.apply args).apply types).Closed {y | y ∈ s.fn.paramNames} := by
+    (s.fn.body args types).Closed {y | y ∈ s.fn.paramNames} := by
   obtain ⟨hbody, -⟩ := h.concretise_typechecks args types
   refine Expr.Closed.mono (safeProgram_closed hbody) ?_
   refine subset_trans VarCtx.from_dom_subset ?_
@@ -770,8 +766,7 @@ def Runs (Λ : Library) {N : ℕ} (own : TyConsId → ℕ → Val → Asrt.{0}) 
       ∧ HProp g₁ (FunTempl.ownValsAt own off (s.renCons (osels.headD []) base)
           (values.splitUniform s.fn.params.length
             (Source.mergedValArity srcs)).1.toList)
-      ∧ (Λ ⊢ ⟨g₁ | ((s.fn.body.apply args.fst).apply
-            (s.tyArgs (osels.headD []) base types)).substs
+      ∧ (Λ ⊢ ⟨g₁ | (s.fn.body args.fst (s.tyArgs (osels.headD []) base types)).substs
               s.fn.paramNames
               (Term.ofVals (values.splitUniform s.fn.params.length
                 (Source.mergedValArity srcs)).1.toList)⟩
@@ -890,7 +885,7 @@ theorem src_valid (h : s.Ok Λ) : s.fn.Valid := h.typechecks.src_valid
 /-- An acceptable source produces its type constructor, with the type parameters it uses
 embedded into those of the template binding it. -/
 theorem resTy_apply_eq {N : ℕ} (h : s.Ok Λ) (osel : List TyIdx) (base : ℕ) (types : TyArgs N) :
-    s.fn.resTy.apply (s.tyArgs osel base types) = s.resTyAt osel base types :=
+    s.fn.resTy (s.tyArgs osel base types) = s.resTyAt osel base types :=
   h.typechecks.resTy_apply_eq osel base types
 
 /-- The concretisations of an acceptable source typecheck. -/
@@ -900,7 +895,7 @@ theorem concretise_typechecks (h : s.Ok Λ) (args : TeleArg s.teleOf)
 
 /-- The body of an acceptable source only uses the parameters of that source. -/
 theorem body_closed (h : s.Ok Λ) (args : TeleArg s.teleOf) (types : TyArgs s.arity) :
-    ((s.fn.body.apply args).apply types).Closed {y | y ∈ s.fn.paramNames} :=
+    (s.fn.body args types).Closed {y | y ∈ s.fn.paramNames} :=
   h.typechecks.body_closed args types
 
 end Ok
@@ -931,8 +926,7 @@ theorem runs_cons {Λ : Library} {N : ℕ} {own : TyConsId → ℕ → Val → A
         ∧ HProp g₁ (FunTempl.ownValsAt own off (s.renCons (osels.headD []) base)
             (values.splitUniform s.fn.params.length
               (Source.mergedValArity srcs)).1.toList)
-        ∧ (Λ ⊢ ⟨g₁ | ((s.fn.body.apply args.fst).apply
-              (s.tyArgs (osels.headD []) base types)).substs
+        ∧ (Λ ⊢ ⟨g₁ | (s.fn.body args.fst (s.tyArgs (osels.headD []) base types)).substs
                 s.fn.paramNames
                 (Term.ofVals (values.splitUniform s.fn.params.length
                   (Source.mergedValArity srcs)).1.toList)⟩
@@ -998,12 +992,11 @@ theorem bindSourcesAux_spec {Λ : Library} {m N : ℕ} {rename : ℕ → PVar �
           (∀ s ∈ srcs, ∀ y ∈ s.fn.paramNames, y.length ≤ m) →
           (∀ y ∈ vars, y.length ≤ m) → srcs.length ≤ vars.length →
           (∀ y τy,
-            (y, τy) ∈ (bindSourcesAux body rename vars rty base osels srcs).sig.apply types →
+            (y, τy) ∈ (bindSourcesAux body rename vars rty base osels srcs).sig types →
             ν y = Part.some τy) →
           SafeProgram (ν.extend vars (Source.resTys srcs osels base types)) Λ τ (body types) →
           SafeProgram ν Λ τ
-            (((bindSourcesAux body rename vars rty base osels srcs).body.apply args).apply
-              types) := by
+            ((bindSourcesAux body rename vars rty base osels srcs).body args types) := by
   intro srcs
   induction srcs with
   | nil =>
@@ -1066,17 +1059,17 @@ theorem bindSourcesAux_spec {Λ : Library} {m N : ℕ} {rename : ℕ → PVar �
           (srcs := srcs) hsrc types
         simp only [List.tail_cons, ← hτs] at hsig
         obtain ⟨hbodysafe, -, hnodup⟩ := hs.concretise_typechecks args.fst τs'
-        have hmapfst : ((s.fn.sig.apply τs').map Prod.fst) = s.fn.paramNames :=
+        have hmapfst : ((s.fn.sig τs').map Prod.fst) = s.fn.paramNames :=
           FunTempl.sig_map_fst
-        refine ⟨s.fn.resTy.apply τs', ?_, ?_⟩
+        refine ⟨s.fn.resTy τs', ?_, ?_⟩
         · have halias := bindAliases_safeProgram (n := srcs.length) hren
-            (ps := s.fn.sig.apply τs') (ν := ν) (by rw [hmapfst]; exact hsrclen s (by simp))
+            (ps := s.fn.sig τs') (ν := ν) (by rw [hmapfst]; exact hsrclen s (by simp))
             (fun y τy hy => hctx _ _
               (hsig ▸ List.mem_append_left _ (List.mem_map.mpr ⟨(y, τy), hy, rfl⟩)))
             (safeProgram_subset hbodysafe (VarCtx.from_subset_extend ν hnodup))
           rwa [hmapfst] at halias
-        · show SafeProgram (PFun.insert x (s.fn.resTy.apply τs') ν) Λ τ _
-          refine hsafe_t args.snd (PFun.insert x (s.fn.resTy.apply τs') ν) τ
+        · show SafeProgram (PFun.insert x (s.fn.resTy τs') ν) Λ τ _
+          refine hsafe_t args.snd (PFun.insert x (s.fn.resTy τs') ν) τ
             (fun s' h => hsrclen s' (List.mem_cons_of_mem _ h))
             (fun y hy => hvarlen y (List.mem_cons_of_mem _ hy))
             (by simpa using hlen) ?_ ?_
@@ -1099,8 +1092,7 @@ private theorem bindSourcesAux_closed {Λ : Library} {m N : ℕ} {rename : ℕ �
       (body : TyArgs N → Expr) (args : TeleArg (Source.mergedTeleOf srcs))
       (types : TyArgs N),
       (∀ s ∈ srcs, s.Ok Λ) → (∀ ts, (body ts).Closed {y : PVar | y.length ≤ m}) →
-      (((bindSourcesAux body rename vars rty base osels srcs).body.apply args).apply
-          types).Closed
+      ((bindSourcesAux body rename vars rty base osels srcs).body args types).Closed
         ({y : PVar | y.length ≤ m}
           ∪ {y | y ∈ (bindSourcesAux body rename vars rty base osels srcs).paramNames}) := by
   intro srcs
@@ -1127,10 +1119,9 @@ private theorem bindSourcesAux_substTerm {Λ : Library} {m N : ℕ} {rename : �
       (types : TyArgs N),
       (∀ s ∈ srcs, s.Ok Λ) → x ∉ vars → x.length ≤ m →
       srcs.length ≤ vars.length →
-      ((((bindSourcesAux body rename vars rty base osels srcs).body.apply args).apply
-          types).substTerm x (.val v))
-        = (((bindSourcesAux (fun ts => (body ts).substTerm x (.val v)) rename vars rty base
-            osels srcs).body.apply args).apply types) := by
+      (((bindSourcesAux body rename vars rty base osels srcs).body args types).substTerm x (.val v))
+        = ((bindSourcesAux (fun ts => (body ts).substTerm x (.val v)) rename vars rty base
+            osels srcs).body args types) := by
   intro srcs
   induction srcs with
   | nil =>
@@ -1167,10 +1158,10 @@ theorem bindSourcesAux_substs {Λ : Library} {m N : ℕ} {rename : ℕ → PVar 
     (types : TyArgs N) (hok : ∀ s ∈ srcs, s.Ok Λ) (hlen : srcs.length ≤ vars.length) :
     ∀ (xs : List PVar) (vs : List Val) (body : TyArgs N → Expr),
       (∀ x ∈ xs, x ∉ vars) → (∀ x ∈ xs, x.length ≤ m) →
-      ((((bindSourcesAux body rename vars rty base osels srcs).body.apply args).apply
-          types).substs xs (Term.ofVals vs))
-        = (((bindSourcesAux (fun ts => (body ts).substs xs (Term.ofVals vs)) rename vars rty
-            base osels srcs).body.apply args).apply types) := by
+      ((bindSourcesAux body rename vars rty base osels srcs).body args types).substs xs
+          (Term.ofVals vs)
+        = ((bindSourcesAux (fun ts => (body ts).substs xs (Term.ofVals vs)) rename vars rty
+            base osels srcs).body args types) := by
   intro xs
   induction xs with
   | nil => intro vs body _ _; rfl
@@ -1212,8 +1203,7 @@ theorem bindSourcesAux_frameStep {Λ : Library} {m N : ℕ} {rename : ℕ → PV
             values.toList)
         ∧ hF ##ₘ g
         ∧ Λ ⊢ ⟨hF ∪ g |
-            (((bindSourcesAux body rename vars rty base osels srcs).body.apply args).apply
-                types).substs
+            ((bindSourcesAux body rename vars rty base osels srcs).body args types).substs
               (bindSourcesAux body rename vars rty base osels srcs).paramNames
               (Term.ofVals values.toList)⟩ ⇓ᵢ ⟨h' | εₛ⟩ := by
   intro srcs
@@ -1305,8 +1295,7 @@ theorem bindSourcesAux_frameStep {Λ : Library} {m N : ℕ} {rename : ℕ → PV
         · obtain ⟨i, z, hi, heq⟩ := hfresh_t _ hz
           obtain ⟨rfl, -⟩ := hren.injective heq
           omega)]
-      have healias : ((bindAliases (s.fn.body.apply args.fst |>.apply
-            (s.tyArgs (osels.headD []) base types))
+      have healias : ((bindAliases (s.fn.body args.fst (s.tyArgs (osels.headD []) base types))
             (rename srcs.length) s.fn.paramNames).substs
           (s.fn.paramNames.map (rename srcs.length))
           (Term.ofVals
@@ -1320,7 +1309,7 @@ theorem bindSourcesAux_frameStep {Λ : Library} {m N : ℕ} {rename : ℕ → PV
       refine FrameStep.letIn (v := r) (h'' := h₁ ∪ (hF ∪ g₂)) ?_ ?_
       · refine bindAliases_frameStep (n := srcs.length) hren s.fn.paramNames
           (TeleArg.splitUniform s.fn.params.length (Source.mergedValArity srcs) values).1.toList
-          ((s.fn.body.apply args.fst).apply (s.tyArgs (osels.headD []) base types)) ∅
+          (s.fn.body args.fst (s.tyArgs (osels.headD []) base types)) ∅
           (hF ∪ (g₁ ∪ g₂)) (h₁ ∪ (hF ∪ g₂)) (.ok r)
           hparamsdup hlen1 (hsrclen s (by simp)) (by simp)
           (Expr.Closed.mono (hs.body_closed args.fst _) Set.subset_union_right) ?_

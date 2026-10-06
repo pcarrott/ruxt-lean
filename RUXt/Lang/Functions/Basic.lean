@@ -65,12 +65,12 @@ end FunImpl
 /-- A symbolic function template: like `FunImpl`, but with type constructors instead of
 concrete types for its parameters and its result, a type arity, and a body parametric both
 in the symbolic values described by the telescope `tt` and in the type arguments. -/
-structure FunTempl (tt : Tele) (arity : ℕ) where
+structure FunTempl (tt : Tele.{0}) (arity : ℕ) where
   /-- The parameters of the template, each with its type constructor. -/
   params : List (PVar × TyConsId)
   /-- The body of the template, parametric in the symbolic values of `tt` and in the
   `arity` type arguments. -/
-  body : tt -t> .uniform Ty arity -t> Expr
+  body : TeleArg tt → TyArgs arity → Expr
   /-- The type constructor of the result. -/
   ty : TyConsId
   /-- Whether the template is safe. -/
@@ -106,20 +106,20 @@ The *signature* of a template at a given tuple of type arguments is the list of 
 names paired with their concrete types, together with the concrete result type.  Both are
 obtained by instantiating the type constructors of the template at that tuple. -/
 
-/-- The concrete types of the parameters, as a function of the type arguments: each
-parameter type constructor is instantiated at the tuple. -/
-def paramTys (φ : FunTempl tt arity) : .uniform Ty arity -t> List Ty :=
-  teleBind fun types => φ.paramCons.map fun C => C.concretise types
-/-- The concrete result type, as a function of the type arguments. -/
-def resTy (φ : FunTempl tt arity) : .uniform Ty arity -t> Ty :=
-  teleBind fun types => φ.ty.concretise types
+/-- The concrete types of the parameters at a tuple of type arguments: each parameter type
+constructor is instantiated at the tuple. -/
+def paramTys (φ : FunTempl tt arity) (types : TyArgs arity) : List Ty :=
+  φ.paramCons.map fun C => C.concretise types
+/-- The concrete result type at a tuple of type arguments. -/
+def resTy (φ : FunTempl tt arity) (types : TyArgs arity) : Ty :=
+  φ.ty.concretise types
 /-- The parameter names of a template. -/
 def paramNames (φ : FunTempl tt arity) : List PVar :=
   φ.params.map Prod.fst
 
 /-- The signature of a template: its parameter names paired with their concrete types. -/
-def sig (φ : FunTempl tt arity) : .uniform Ty arity -t> List (PVar × Ty) :=
-  teleBind fun types => (φ.paramNames).zip (φ.paramTys.apply types)
+def sig (φ : FunTempl tt arity) (types : TyArgs arity) : List (PVar × Ty) :=
+  φ.paramNames.zip (φ.paramTys types)
 
 /-! ### Concretisation
 
@@ -131,9 +131,9 @@ result gets the instantiation of the result type constructor. -/
 arguments, producing a concrete function implementation. -/
 def concretise (φ : FunTempl tt arity) (vals : TeleArg tt) (types : TyArgs arity) :
     FunImpl :=
-  { params := φ.sig.apply types
-    body := φ.body |>.apply vals |>.apply types
-    ty := φ.resTy.apply types
+  { params := φ.sig types
+    body := φ.body vals types
+    ty := φ.resTy types
     safe := φ.safe }
 
 /-! ### Instantiation at a list of type arguments
@@ -166,14 +166,14 @@ that template. -/
 theorem Bounded.res {φ : FunTempl tt arity} (h : φ.Bounded) : φ.ty.Bounded arity := h.2
 
 @[simp] theorem paramTys_apply (φ : FunTempl tt arity) (types : TyArgs arity) :
-    φ.paramTys.apply types = φ.paramCons.map fun C => C.concretise types :=
-  teleBind_apply _ _
+    φ.paramTys types = φ.paramCons.map fun C => C.concretise types :=
+  rfl
 @[simp] theorem resTy_apply (φ : FunTempl tt arity) (types : TyArgs arity) :
-    φ.resTy.apply types = φ.ty.concretise types :=
-  teleBind_apply _ _
+    φ.resTy types = φ.ty.concretise types :=
+  rfl
 @[simp] theorem sig_apply (φ : FunTempl tt arity) (types : TyArgs arity) :
-    φ.sig.apply types = φ.paramNames.zip (φ.paramTys.apply types) :=
-  teleBind_apply _ _
+    φ.sig types = φ.paramNames.zip (φ.paramTys types) :=
+  rfl
 
 /-- A template with no parameter has an empty list of parameter names. -/
 @[simp] theorem paramNames_eq_nil {φ : FunTempl tt arity} (h : φ.params = []) :
@@ -181,40 +181,40 @@ theorem Bounded.res {φ : FunTempl tt arity} (h : φ.Bounded) : φ.ty.Bounded ar
   rw [paramNames, h, List.map_nil]
 /-- A template with no parameter has an empty signature. -/
 @[simp] theorem sig_apply_eq_nil {φ : FunTempl tt arity} (h : φ.params = [])
-    (types : TyArgs arity) : φ.sig.apply types = [] := by
+    (types : TyArgs arity) : φ.sig types = [] := by
   rw [sig_apply, paramNames_eq_nil h]; rfl
 
 /-- A template has exactly one signature entry per parameter. -/
 @[simp] theorem length_sig {φ : FunTempl tt arity} {types : TyArgs arity} :
-    (φ.sig.apply types).length = φ.params.length := by
+    (φ.sig types).length = φ.params.length := by
   simp [paramNames]
 
 /-- The signature of a template: every parameter, at the instantiation of its type
 constructor. -/
 theorem sig_apply_eq_map (φ : FunTempl tt arity) (types : TyArgs arity) :
-    φ.sig.apply types = φ.params.map fun p => (p.1, p.2.concretise types) := by
+    φ.sig types = φ.params.map fun p => (p.1, p.2.concretise types) := by
   rw [sig_apply, paramTys_apply, paramNames, paramCons, List.map_map, List.zip_map']
   rfl
 
 /-- The signature of a template keeps the parameter names of the template. -/
 theorem sig_map_fst {φ : FunTempl tt arity} {types : TyArgs arity} :
-    (φ.sig.apply types).map Prod.fst = φ.paramNames := by
+    (φ.sig types).map Prod.fst = φ.paramNames := by
   simp [paramNames, List.map_fst_zip]
 /-- The parameter types in the signature of a template are the instantiations of its
 parameter type constructors. -/
 theorem sig_map_snd {φ : FunTempl tt arity} {types : TyArgs arity} :
-    (φ.sig.apply types).map Prod.snd = φ.paramTys.apply types := by
+    (φ.sig types).map Prod.snd = φ.paramTys types := by
   rw [sig_apply, List.map_snd_zip (by simp [paramNames])]
 
 theorem mem_params_of_mem_sig {φ : FunTempl tt arity} {types : TyArgs arity}
-    {x : PVar} {τ : Ty} (h : (x, τ) ∈ φ.sig.apply types) : x ∈ φ.paramNames := by
+    {x : PVar} {τ : Ty} (h : (x, τ) ∈ φ.sig types) : x ∈ φ.paramNames := by
   rw [sig_apply] at h
   exact (List.of_mem_zip h).1
 
 /-- Every type in the signature of a template is the instantiation of the type constructor
 of one of its parameters. -/
 theorem mem_paramCons_of_mem_sig {φ : FunTempl tt arity} {types : TyArgs arity}
-    {x : PVar} {τ : Ty} (h : (x, τ) ∈ φ.sig.apply types) :
+    {x : PVar} {τ : Ty} (h : (x, τ) ∈ φ.sig types) :
     ∃ C ∈ φ.paramCons, τ = C.concretise types := by
   rw [sig_apply, paramTys_apply] at h
   obtain ⟨C, hC, rfl⟩ := List.mem_map.mp (List.of_mem_zip h).2
@@ -222,13 +222,13 @@ theorem mem_paramCons_of_mem_sig {φ : FunTempl tt arity} {types : TyArgs arity}
 
 theorem concretise_params (φ : FunTempl tt arity)
     (vals : TeleArg tt) (types : TyArgs arity) :
-    (φ.concretise vals types).params = φ.sig.apply types := rfl
+    (φ.concretise vals types).params = φ.sig types := rfl
 theorem concretise_body (φ : FunTempl tt arity)
     (vals : TeleArg tt) (types : TyArgs arity) :
-    (φ.concretise vals types).body = (φ.body.apply vals).apply types := rfl
+    (φ.concretise vals types).body = φ.body vals types := rfl
 theorem concretise_ty (φ : FunTempl tt arity)
     (vals : TeleArg tt) (types : TyArgs arity) :
-    (φ.concretise vals types).ty = φ.resTy.apply types := rfl
+    (φ.concretise vals types).ty = φ.resTy types := rfl
 theorem concretise_safe (φ : FunTempl tt arity)
     (vals : TeleArg tt) (types : TyArgs arity) :
     (φ.concretise vals types).safe = φ.safe := rfl

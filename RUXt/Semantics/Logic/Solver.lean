@@ -40,32 +40,18 @@ at a tuple of symbolic values when the assertion it
 yields there is satisfiable, and two symbolic assertions simplify to one another when the
 assertions they yield are logically equivalent at every tuple of symbolic values. -/
 def semSolver : Solver where
-  Model A args := Sat (TeleFun.apply A args)
-  Simplify A B := ∀ args, TeleFun.apply A args ⊣⊢ TeleFun.apply B args
-
-@[simp] theorem semSolver_model {tt : Tele.{1}} {A : SymAsrt.{0} tt} {args : TeleArg tt} :
-    semSolver.Model A args ↔ Sat (TeleFun.apply A args) := Iff.rfl
+  Model A args := Sat (A args)
+  Simplify A B := ∀ args, A args ⊣⊢ B args
 
 /-- The semantic solver accepts a symbolic assertion over the symbolic values of a small
 telescope at a tuple of them exactly when the assertion it yields there is satisfiable. -/
 @[simp] theorem semSolver_model_symAsrt {tt : Tele.{0}} {F : TeleArg tt → Asrt.{0}}
     {args : TeleArg (symTele tt)} :
-    semSolver.Model (symAsrt F) args ↔ Sat (F args.ulower) := by
-  rw [semSolver_model, symAsrt, teleBind_apply]
-
-/-- A symbolic assertion over the symbolic values of a small telescope is satisfiable for
-the semantic solver exactly when it yields a satisfiable assertion at some of them. -/
-theorem semSolver_sat_symAsrt {tt : Tele.{0}} {F : TeleArg tt → Asrt.{0}} :
-    semSolver.Sat (symAsrt F) ↔ ∃ args : TeleArg tt, Sat (F args) := by
-  constructor
-  · rintro ⟨args, h⟩
-    exact ⟨args.ulower, semSolver_model_symAsrt.mp h⟩
-  · rintro ⟨args, h⟩
-    refine ⟨TeleArg.uliftArg args, semSolver_model_symAsrt.mpr ?_⟩
-    rwa [TeleArg.ulower_uliftArg]
+    semSolver.Model (symAsrt F) args ↔ Sat (F args.ulower) :=
+  Iff.rfl
 
 @[simp] theorem semSolver_simplify {tt : Tele.{1}} {A B : SymAsrt.{0} tt} :
-    semSolver.Simplify A B ↔ ∀ args, TeleFun.apply A args ⊣⊢ TeleFun.apply B args :=
+    semSolver.Simplify A B ↔ ∀ args, A args ⊣⊢ B args :=
   Iff.rfl
 
 /-- The tuples the semantic solver accepts the postcondition of a summary at are the ones at

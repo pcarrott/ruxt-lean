@@ -19,83 +19,60 @@ universe u v w
 /-! ## Building symbolic expressions
 
 Every way of building an expression lifts pointwise to symbolic expressions; the arguments of
-each builder are themselves read off the telescope at the symbolic values the expression is
-taken at. -/
-
-/-- An expression may be written where a lifted one is expected. -/
-instance : CoeTail Expr LExpr.{u} := ⟨ULift.up⟩
+each builder are themselves functions of the environment the expression is read at.  Since a
+symbolic expression is a plain function of the environment, reading a built expression at an
+environment unfolds definitionally (the `_apply` lemmas below are `rfl`, and are `simp`
+lemmas only so that the builders need not be unfolded by hand). -/
 
 namespace SymExpr
 
 variable {tt tt' : Tele.{u + 1}}
 
-/-- The symbolic expression running `e` whatever the symbolic values. -/
-def const (e : Expr) : SymExpr tt := teleLift fun _ => e
-
 /-- Symbolic substitution of a symbolic value for a binder (`Expr.subst` pointwise). -/
-def subst (e : SymExpr tt) (x : Binder) (v : TeleLift tt Val) : SymExpr tt :=
-  teleLift fun args => (e.at args).subst x (v.at args)
+def subst (e : SymExpr tt) (x : Binder) (v : TeleArg tt → Val) : SymExpr tt :=
+  fun args => (e args).subst x (v args)
 
 /-- Symbolic substitution of a symbolic list of values for a list of variables (`Expr.substs`
 pointwise). -/
-def substs (body : SymExpr tt) (xs : List PVar) (vals : TeleLift tt (List Val)) : SymExpr tt :=
-  teleLift fun args => (body.at args).substs xs (Term.ofVals (vals.at args))
+def substs (body : SymExpr tt) (xs : List PVar) (vals : TeleArg tt → List Val) : SymExpr tt :=
+  fun args => (body args).substs xs (Term.ofVals (vals args))
 
 /-- Symbolic sequencing (`Expr.letIn` pointwise). -/
 def letIn (x : Binder) (e₁ e₂ : SymExpr tt) : SymExpr tt :=
-  teleLift fun args => .letIn x (e₁.at args) (e₂.at args)
+  fun args => .letIn x (e₁ args) (e₂ args)
 
 /-- Symbolic nondeterministic choice (`Expr.choice` pointwise). -/
 def choice (e₁ e₂ : SymExpr tt) : SymExpr tt :=
-  teleLift fun args => .choice (e₁.at args) (e₂.at args)
+  fun args => .choice (e₁ args) (e₂ args)
 
 /-- The symbolic call of `f` at symbolic type arguments and symbolic argument values
 (`Expr.call` pointwise). -/
-def call (f : Fid) (tys : TeleLift tt (List Ty)) (vals : TeleLift tt (List Val)) :
+def call (f : Fid) (tys : TeleArg tt → List Ty) (vals : TeleArg tt → List Val) :
     SymExpr tt :=
-  teleLift fun args => .call f (tys.at args) (Term.ofVals (vals.at args))
+  fun args => .call f (tys args) (Term.ofVals (vals args))
 
 /-- The symbolic body of the declaration `φ`, concretised at symbolic type arguments and run at
 symbolic argument values, both well-sized. -/
-def body (φ : FunDecl) (tys : TeleLift tt φ.TyArgs) (vals : TeleLift tt φ.ValArgs) :
+def body (φ : FunDecl) (tys : TeleArg tt → φ.TyArgs) (vals : TeleArg tt → φ.ValArgs) :
     SymExpr tt :=
-  teleLift fun args => (φ.concretise (tys.at args)).with (vals.at args)
+  fun args => (φ.concretise (tys args)).with (vals args)
 
 /-- A symbolic expression over `tt` read over `tt'` along a map of symbolic values. -/
 def reindex (e : SymExpr tt) (f : TeleArg tt' → TeleArg tt) : SymExpr tt' :=
-  teleLift fun args => e.at (f args)
+  fun args => e (f args)
 
-/-! ## Reading a symbolic expression at a tuple of symbolic values -/
+/-! ## Reading a symbolic expression at an environment -/
 
-@[simp] theorem const_at (e : Expr) (args : TeleArg tt) :
-    (const (tt := tt) e).at args = e := teleLift_at ..
+@[simp] theorem letIn_apply (x : Binder) (e₁ e₂ : SymExpr tt) (args : TeleArg tt) :
+    letIn x e₁ e₂ args = .letIn x (e₁ args) (e₂ args) := rfl
 
-@[simp] theorem subst_at (e : SymExpr tt) (x : Binder) (v : TeleLift tt Val)
-    (args : TeleArg tt) : (e.subst x v).at args = (e.at args).subst x (v.at args) :=
-  teleLift_at ..
+@[simp] theorem choice_apply (e₁ e₂ : SymExpr tt) (args : TeleArg tt) :
+    choice e₁ e₂ args = .choice (e₁ args) (e₂ args) := rfl
 
-@[simp] theorem substs_at (body : SymExpr tt) (xs : List PVar) (vals : TeleLift tt (List Val))
-    (args : TeleArg tt) :
-    (body.substs xs vals).at args = (body.at args).substs xs (Term.ofVals (vals.at args)) :=
-  teleLift_at ..
-
-@[simp] theorem letIn_at (x : Binder) (e₁ e₂ : SymExpr tt) (args : TeleArg tt) :
-    (letIn x e₁ e₂).at args = .letIn x (e₁.at args) (e₂.at args) := teleLift_at ..
-
-@[simp] theorem choice_at (e₁ e₂ : SymExpr tt) (args : TeleArg tt) :
-    (choice e₁ e₂).at args = .choice (e₁.at args) (e₂.at args) := teleLift_at ..
-
-@[simp] theorem call_at (f : Fid) (tys : TeleLift tt (List Ty)) (vals : TeleLift tt (List Val))
-    (args : TeleArg tt) :
-    (call f tys vals).at args = .call f (tys.at args) (Term.ofVals (vals.at args)) :=
-  teleLift_at ..
-
-@[simp] theorem body_at (φ : FunDecl) (tys : TeleLift tt φ.TyArgs) (vals : TeleLift tt φ.ValArgs)
-    (args : TeleArg tt) :
-    (body φ tys vals).at args = (φ.concretise (tys.at args)).with (vals.at args) := teleLift_at ..
-
-@[simp] theorem reindex_at (e : SymExpr tt) (f : TeleArg tt' → TeleArg tt)
-    (args : TeleArg tt') : (e.reindex f).at args = e.at (f args) := teleLift_at ..
+@[simp] theorem call_apply (f : Fid) (tys : TeleArg tt → List Ty)
+    (vals : TeleArg tt → List Val) (args : TeleArg tt) :
+    call f tys vals args = .call f (tys args) (Term.ofVals (vals args)) :=
+  rfl
 
 end SymExpr
 

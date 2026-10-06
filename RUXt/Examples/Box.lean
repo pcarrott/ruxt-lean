@@ -24,7 +24,7 @@ def ςsBox : Picks := [(.param 0, Summary.id boxLib)]
 /-- Simplified postcondition of `box`: a box `l` holding the input value, which owns its
 resources through the typed subvariant supplied for the type parameter. -/
 def boxSubv : boxDecl.Subvariant ςsBox :=
-  fun r v ts => .ex fun l =>
+  fun r ⟨v, ts, _⟩ => .ex fun l =>
     ⌞ r = .loc l ⌟ ∗ (l ↦ v.down ∗ ts.get boxLib 0 v.down)
 
 /-- `boxSubv` only reads the typed subvariant supplied for its type parameter at rank `0`. -/
@@ -42,7 +42,7 @@ theorem boxSubv_at_congr (r : Val) (args : TeleArg (ςsBox.teleOf.app (.uniform 
 
 /-- The postcondition obtained from executing the `box` function. -/
 def boxPost : ςsBox.DerivedPost 1 :=
-  fun r v rv ts =>
+  fun r ⟨v, rv, ts, _⟩ =>
     ⌞ rv.down = v.down ⌟ ∗
       (.ex fun l => ⌞ r = .loc l ⌟ ∗ (l ↦ rv.down ∗ ts.get boxLib 0 v.down))
 
@@ -96,11 +96,11 @@ theorem tryRefute_box : boxLib.TryRefute risl semSolver (SummCtx.base boxLib) (.
       refine .cons (tt := ςsBox.callTele 1) (tt' := ςsBox.callTele 1) id
         (fun _ => List.Subset.refl _) ?pre ?post (fun _ => rfl)
         (.ex (tt := ςsBox.callTele 1) (X := Loc)
-          (e := fun _ rv _ => ULift.up (Expr.letIn (.named "l") (.alloc (.int 1))
-            (.letIn .anon (.store (.var "l") (.val rv.down)) (.var "l"))))
+          (e := fun ⟨_, rv, _, _⟩ => Expr.letIn (.named "l") (.alloc (.int 1))
+            (.letIn .anon (.store (.var "l") (.val rv.down)) (.var "l")))
           (.ex (tt := bTele) (X := Loc)
-            (e := fun _ _ rv _ => ULift.up (Expr.letIn (.named "l") (.alloc (.int 1))
-              (.letIn .anon (.store (.var "l") (.val rv.down)) (.var "l"))))
+            (e := fun ⟨_, _, rv, _, _⟩ => Expr.letIn (.named "l") (.alloc (.int 1))
+              (.letIn .anon (.store (.var "l") (.val rv.down)) (.var "l")))
             (wfSpec_alloc_store fun _ _ v rv ts => ⌞ rv = v ⌟ ∗ ts.get boxLib 0 v)))
       case pre =>
         rintro ⟨v, rv, ts, ⟨⟩⟩ h ⟨l₁, l₂, hh⟩
@@ -124,7 +124,7 @@ def ςsRebox : Picks := [(.boxT, boxSumm)]
 
 /-- Simplified postcondition of `rebox`: a box `l₂` pointing at the box `l₁` of the input. -/
 def reboxSubv : reboxDecl.Subvariant ςsRebox :=
-  fun r v ts => .ex fun l₁ => .ex fun l₂ =>
+  fun r ⟨v, ts, _⟩ => .ex fun l₁ => .ex fun l₂ =>
     ⌞ r = .loc l₂ ⌟ ∗ (l₂ ↦ .loc l₁ ∗ (l₁ ↦ v.down ∗ ts.get boxLib 0 v.down))
 
 /-- `reboxSubv` only reads the typed subvariant supplied for its type parameter at rank `0`. -/
@@ -143,7 +143,7 @@ theorem reboxSubv_at_congr (r : Val)
 
 /-- The postcondition obtained from executing the `rebox` function. -/
 def reboxPost : ςsRebox.DerivedPost 1 :=
-  fun r v rv ts => .ex fun l₁ => .ex fun l₂ =>
+  fun r ⟨v, rv, ts, _⟩ => .ex fun l₁ => .ex fun l₂ =>
     (⌞ rv.down = .loc l₁ ⌟ ∗ (l₁ ↦ v.down ∗ ts.get boxLib 0 v.down)) ∗
       (⌞ r = .loc l₂ ⌟ ∗ l₂ ↦ rv.down)
 
@@ -209,11 +209,11 @@ theorem tryRefute_rebox : boxLib.TryRefute risl semSolver boxCtx (.inl (.boxT, r
       refine .cons (tt := ςsRebox.callTele 1) (tt' := ςsRebox.callTele 1) id
         (fun _ => List.Subset.refl _) ?pre (fun _ _ _ hh => hh) (fun _ => rfl)
         (.ex (tt := ςsRebox.callTele 1) (X := Loc)
-          (e := fun _ rv _ => ULift.up (Expr.letIn (.named "l") (.alloc (.int 1))
-            (.letIn .anon (.store (.var "l") (.val rv.down)) (.var "l"))))
+          (e := fun ⟨_, rv, _, _⟩ => Expr.letIn (.named "l") (.alloc (.int 1))
+            (.letIn .anon (.store (.var "l") (.val rv.down)) (.var "l")))
           (.ex (tt := bTele) (X := Loc)
-            (e := fun _ _ rv _ => ULift.up (Expr.letIn (.named "l") (.alloc (.int 1))
-              (.letIn .anon (.store (.var "l") (.val rv.down)) (.var "l"))))
+            (e := fun ⟨_, _, rv, _, _⟩ => Expr.letIn (.named "l") (.alloc (.int 1))
+              (.letIn .anon (.store (.var "l") (.val rv.down)) (.var "l")))
             (wfSpec_alloc_store fun _ l₁ v rv ts =>
               ⌞ rv = .loc l₁ ⌟ ∗ (l₁ ↦ v ∗ ts.get boxLib 0 v))))
       case pre =>
@@ -234,7 +234,7 @@ def ςsCycle : Picks := [(.boxT, reboxSumm)]
 /-- Simplified postcondition of `cycle`: the head cell of the box has been overwritten with
 the head pointer itself, so that it points at itself. -/
 def cycleSubv : cycleDecl.Subvariant ςsCycle :=
-  fun r v ts => .ex fun l₁ => .ex fun l₂ =>
+  fun r ⟨v, ts, _⟩ => .ex fun l₁ => .ex fun l₂ =>
     ⌞ r = .loc l₂ ⌟ ∗ (l₂ ↦ .loc l₂ ∗ (l₁ ↦ v.down ∗ ts.get boxLib 0 v.down))
 
 /-- `cycleSubv` only reads the typed subvariant supplied for its type parameter at rank `0`. -/
@@ -253,7 +253,7 @@ theorem cycleSubv_at_congr (r : Val)
 
 /-- The postcondition obtained from executing the `cycle` function. -/
 def cyclePost : ςsCycle.DerivedPost 1 :=
-  fun r v rv ts => .ex fun l₁ => .ex fun l₂ => ⌞ rv.down = .loc l₂ ⌟ ∗
+  fun r ⟨v, rv, ts, _⟩ => .ex fun l₁ => .ex fun l₂ => ⌞ rv.down = .loc l₂ ⌟ ∗
     (⌞ r = .loc l₂ ⌟ ∗ (l₂ ↦ .loc l₂ ∗ (l₁ ↦ v.down ∗ ts.get boxLib 0 v.down)))
 
 theorem cyclePost_simplifiesTo : cyclePost.SimplifiesTo semSolver cycleSubv :=
@@ -287,7 +287,7 @@ theorem wfSpec_cycleBody (A : Val → TypedSubvariants.{0} → Asrt.{0}) :
       ⌈ .lok : λₗ r, (l₁.down ↦ v.down ∗ A v.down ts) ∗
           (⌞ rv.down = .loc l₂.down ⌟ ∗ (⌞ r = .unit ⌟ ∗ l₂.down ↦ rv.down)) ⌉ :=
     .frame (tt := bTele₂)
-      (R := fun _ l₁ v _ ts => l₁.down ↦ v.down ∗ A v.down ts)
+      (R := fun ⟨_, l₁, v, _, ts, _⟩ => l₁.down ↦ v.down ∗ A v.down ts)
       (.reindex (tt := [tele (_ : Lifted.{1} Val) (_ : Lifted.{1} Loc) (_ : Lifted.{1} Val)
           (_ : Lifted.{1} Val)]) (tt' := bTele₂)
         (fun ⟨l₂, l₁, _, rv, _, _⟩ => ⟨rv, l₂, rv, .up (.loc l₁.down), PUnit.unit⟩) .store)
@@ -301,7 +301,7 @@ theorem wfSpec_cycleBody (A : Val → TypedSubvariants.{0} → Asrt.{0}) :
           (⌞ r = .loc l₂.down ⌟ ∗ (l₂.down ↦ .loc l₂.down ∗ (l₁.down ↦ v.down ∗ A v.down ts))) ⌉ := by
     refine .cons (tt := bTele₂) id (fun _ => List.Subset.refl _) ?pre ?post (fun _ => rfl)
       (.frame (tt := bTele₂)
-        (R := fun l₂ l₁ v rv ts => (l₁.down ↦ v.down ∗ A v.down ts) ∗
+        (R := fun ⟨l₂, l₁, v, rv, ts, _⟩ => (l₁.down ↦ v.down ∗ A v.down ts) ∗
           (⌞ rv.down = .loc l₂.down ⌟ ∗ (⌞ Val.unit = .unit ⌟ ∗ l₂.down ↦ rv.down)))
         (.reindex (tt := [tele (_ : Lifted.{1} Pure)]) (tt' := bTele₂)
           (fun ⟨_, _, _, rv, _, _⟩ => ⟨.up (Pure.val rv.down), PUnit.unit⟩) .pure))
@@ -322,9 +322,9 @@ theorem wfSpec_cycleBody (A : Val → TypedSubvariants.{0} → Asrt.{0}) :
   -- sequence the store and the return
   refine .cons (tt := bTele₂) id (fun _ => List.Subset.refl _) ?pre
     (fun _ _ _ hh => hh) (fun _ => rfl)
-    (.letIn (tt := bTele₂) (x := .anon) (v := fun _ _ _ _ _ => ULift.up Val.unit)
-      (e₁ := fun _ _ _ rv _ => ULift.up (Expr.store (.val rv.down) (.val rv.down)))
-      (e₂ := fun _ _ _ rv _ => ULift.up (Expr.pure (.val rv.down)))
+    (.letIn (tt := bTele₂) (x := .anon) (v := fun _ => Val.unit)
+      (e₁ := fun ⟨_, _, _, rv, _, _⟩ => Expr.store (.val rv.down) (.val rv.down))
+      (e₂ := fun ⟨_, _, _, rv, _, _⟩ => Expr.pure (.val rv.down))
       Dstore Dret)
   case pre =>
     rintro ⟨l₂, l₁, v, rv, ts⟩ h hh
@@ -379,11 +379,11 @@ theorem tryRefute_cycle : boxLib.TryRefute risl semSolver reboxCtx (.inl (.boxT,
       refine .cons (tt := ςsCycle.callTele 1) (tt' := ςsCycle.callTele 1) id
         (fun _ => List.Subset.refl _) ?pre (fun _ _ _ hh => hh) (fun _ => rfl)
         (.ex (tt := ςsCycle.callTele 1) (X := Loc)
-          (e := fun _ rv _ => ULift.up (Expr.letIn .anon
-            (.store (.val rv.down) (.val rv.down)) (.pure (.val rv.down))))
+          (e := fun ⟨_, rv, _, _⟩ => Expr.letIn .anon
+            (.store (.val rv.down) (.val rv.down)) (.pure (.val rv.down)))
           (.ex (tt := bTele) (X := Loc)
-            (e := fun _ _ rv _ => ULift.up (Expr.letIn .anon
-              (.store (.val rv.down) (.val rv.down)) (.pure (.val rv.down))))
+            (e := fun ⟨_, _, rv, _, _⟩ => Expr.letIn .anon
+              (.store (.val rv.down) (.val rv.down)) (.pure (.val rv.down)))
             (wfSpec_cycleBody fun v ts => ts.get boxLib 0 v)))
       case pre =>
         rintro ⟨v, rv, ts, ⟨⟩⟩ h ⟨l₁, l₂, hh⟩
@@ -403,12 +403,12 @@ def ςsDrop : Picks := [(.boxT, cycleSumm)]
 
 /-- Simplified postcondition of `drop`: the head cell of the cycle has been freed. -/
 def dropSubv : dropDecl.Subvariant ςsDrop :=
-  fun r v ts => .ex fun l₁ => .ex fun l₂ =>
+  fun r ⟨v, ts, _⟩ => .ex fun l₁ => .ex fun l₂ =>
     ⌞ r = .unit ⌟ ∗ (l₂ ↦∅ ∗ (l₁ ↦ v.down ∗ ts.get boxLib 0 v.down))
 
 /-- The (erroneous) postcondition obtained from executing the `drop` function. -/
 def dropPost : ςsDrop.DerivedPost 1 :=
-  fun r v rv ts => .ex fun l₁ => .ex fun l₂ => ⌞ rv.down = .loc l₂ ⌟ ∗
+  fun r ⟨v, rv, ts, _⟩ => .ex fun l₁ => .ex fun l₂ => ⌞ rv.down = .loc l₂ ⌟ ∗
     (⌞ r = .unit ⌟ ∗ (l₂ ↦∅ ∗ (l₁ ↦ v.down ∗ ts.get boxLib 0 v.down)))
 
 theorem dropPost_simplifiesTo : dropPost.SimplifiesTo semSolver dropSubv :=
@@ -437,68 +437,68 @@ theorem wfSpec_not_isUnitTest_branch {Γ : SpecCtx.{0}} {ε : LExit}
     (hw : ∀ args h, HProp h (P args) →
       some (Val.bool true) = (Pure.not (isUnitTest (.val (w args)))).eval)
     (hk : ∀ args, (k args).substTerm "g" (.val (.bool true)) = k args)
-    (hderiv : Γ ⊢ ⌈teleBind P⌉ (teleLift k) ⌈ε, fun r => teleBind (Φ r)⌉) :
-    Γ ⊢ ⌈teleBind P⌉ (teleLift fun args => Expr.choice (e₁ args)
+    (hderiv : Γ ⊢ ⌈P⌉ k ⌈ε, Φ⌉) :
+    Γ ⊢ ⌈P⌉ (fun args => Expr.choice (e₁ args)
       (.letIn (.named "g") (.pure (.not (isUnitTest (.val (w args)))))
         (.letIn .anon (.assume (.var "g")) (k args))))
-      ⌈ε, fun r => teleBind (Φ r)⌉ := by
+      ⌈ε, Φ⌉ := by
   -- the body of the branch, once the guard has been assumed
-  have Dbody : Γ ⊢ ⌈teleBind fun args => P args ∗ ⌞ Val.unit = .unit ⌟⌉
-      (teleLift fun args => (k args).substTerm "g" (.val (.bool true)))
-      ⌈ε, fun r => teleBind (Φ r)⌉ := by
+  have Dbody : Γ ⊢ ⌈fun args => P args ∗ ⌞ Val.unit = .unit ⌟⌉
+      (fun args => (k args).substTerm "g" (.val (.bool true)))
+      ⌈ε, Φ⌉ := by
     refine .cons (tt := bTele₂) id (fun _ => List.Subset.refl _) ?_ ?_ ?_ hderiv
     · exact fun _ h hh => ⟨h, ∅, (PFun.union_empty h).symm, PFun.disjoint_empty_right h, hh,
         ⟨rfl, rfl⟩⟩
     · exact fun _ _ _ hh => hh
     · exact fun args => hk args
   -- the `assume` of the guard succeeds, since the guard has evaluated to `true`
-  have Dass1 : Γ ⊢ ⌈teleBind P⌉ (teleLift fun _ => Expr.assume .true)
-      ⌈ .lok, fun r => teleBind fun args => P args ∗ ⌞ r = .unit ⌟ ⌉ := by
+  have Dass1 : Γ ⊢ ⌈P⌉ (fun _ => Expr.assume .true)
+      ⌈ .lok, fun r args => P args ∗ ⌞ r = .unit ⌟ ⌉ := by
     refine .cons (tt := bTele₂) id (fun _ => List.Subset.refl _) ?_ ?_ ?_
-      (.frame (tt := bTele₂) (R := teleBind P)
+      (.frame (tt := bTele₂) (R := P)
         (.reindex (tt := [tele]) (tt' := bTele₂) (fun _ => PUnit.unit) .assume))
     · exact fun _ _ hh => hProp_star_emp_elim hh
     · exact fun _ _ _ hh => hh
     · exact fun _ => rfl
-  have Dassume : Γ ⊢ ⌈teleBind P⌉
-      (teleLift fun args => Expr.letIn .anon (.assume .true)
+  have Dassume : Γ ⊢ ⌈P⌉
+      (fun args => Expr.letIn .anon (.assume .true)
         ((k args).substTerm "g" (.val (.bool true))))
-      ⌈ε, fun r => teleBind (Φ r)⌉ :=
-    .letIn (tt := bTele₂) (x := .anon) (v := teleLift fun _ => Val.unit)
-      (e₁ := teleLift fun _ => Expr.assume .true)
-      (e₂ := teleLift fun args => (k args).substTerm "g" (.val (.bool true)))
+      ⌈ε, Φ⌉ :=
+    .letIn (tt := bTele₂) (x := .anon) (v := fun _ => Val.unit)
+      (e₁ := fun _ => Expr.assume .true)
+      (e₂ := fun args => (k args).substTerm "g" (.val (.bool true)))
       Dass1 Dbody
   -- evaluate the guard, which is `true` because the value read out of the box is a pointer
-  have Dguard : Γ ⊢ ⌈teleBind P⌉
-      (teleLift fun args => Expr.pure (.not (isUnitTest (.val (w args)))))
-      ⌈ .lok, fun r => teleBind fun args =>
+  have Dguard : Γ ⊢ ⌈P⌉
+      (fun args => Expr.pure (.not (isUnitTest (.val (w args)))))
+      ⌈ .lok, fun r args =>
         P args ∗ ⌞ some r = (Pure.not (isUnitTest (.val (w args)))).eval ⌟ ⌉ := by
     refine .cons (tt := bTele₂) id (fun _ => List.Subset.refl _) ?_ ?_ ?_
-      (.frame (tt := bTele₂) (R := teleBind P)
+      (.frame (tt := bTele₂) (R := P)
         (.reindex (tt := [tele (_ : Lifted.{1} Pure)]) (tt' := bTele₂)
           (fun args => ⟨.up (.not (isUnitTest (.val (w args)))), PUnit.unit⟩) .pure))
     · exact fun _ _ hh => hProp_star_emp_elim hh
     · exact fun _ _ _ hh => hh
     · exact fun _ => rfl
-  have Dassume' : Γ ⊢ ⌈teleBind fun args =>
+  have Dassume' : Γ ⊢ ⌈fun args =>
         P args ∗ ⌞ some (Val.bool true) = (Pure.not (isUnitTest (.val (w args)))).eval ⌟⌉
-      (teleLift fun args => Expr.letIn .anon (.assume .true)
+      (fun args => Expr.letIn .anon (.assume .true)
         ((k args).substTerm "g" (.val (.bool true))))
-      ⌈ε, fun r => teleBind (Φ r)⌉ := by
+      ⌈ε, Φ⌉ := by
     refine .cons (tt := bTele₂) id (fun _ => List.Subset.refl _) ?_ ?_ ?_ Dassume
     · exact fun args h hh => ⟨h, ∅, (PFun.union_empty h).symm, PFun.disjoint_empty_right h, hh,
         ⟨rfl, hw args h hh⟩⟩
     · exact fun _ _ _ hh => hh
     · exact fun _ => rfl
   refine .choice (tt := bTele₂)
-    (e₁ := teleLift e₁)
-    (e₂ := teleLift fun args => Expr.letIn (.named "g")
+    (e₁ := e₁)
+    (e₂ := fun args => Expr.letIn (.named "g")
       (.pure (.not (isUnitTest (.val (w args)))))
       (.letIn .anon (.assume (.var "g")) (k args)))
     (Or.inr rfl)
-    (.letIn (tt := bTele₂) (x := .named "g") (v := teleLift fun _ => Val.bool true)
-      (e₁ := teleLift fun args => Expr.pure (.not (isUnitTest (.val (w args)))))
-      (e₂ := teleLift fun args => Expr.letIn .anon (.assume (.var "g")) (k args))
+    (.letIn (tt := bTele₂) (x := .named "g") (v := fun _ => Val.bool true)
+      (e₁ := fun args => Expr.pure (.not (isUnitTest (.val (w args)))))
+      (e₂ := fun args => Expr.letIn .anon (.assume (.var "g")) (k args))
       Dguard Dassume')
 
 /-- The specification of `drop` called on a location that has already been freed: its very
@@ -506,9 +506,11 @@ first `load` reads a freed cell.  The type argument is read off the typed subvar
 by the telescope (`τ ts`), and the argument is the symbolic value `rv`, recorded by the pre- and
 postcondition to be the freed location `l₂`. -/
 def dropSpecFreed (τ : TypedSubvariants.{0} → Ty) : FunSpec.{0} :=
-  ⟨bTele₂, fun _ _ _ _ ts => ULift.up [τ ts], fun _ _ _ rv _ => ULift.up [rv.down],
-    fun l₂ _ _ rv _ => ⌞ rv.down = .loc l₂.down ⌟ ∗ l₂.down ↦∅, .lerr,
-    fun r l₂ _ _ rv _ => ⌞ rv.down = .loc l₂.down ⌟ ∗ (⌞ r = .unit ⌟ ∗ l₂.down ↦∅)⟩
+  ⟨bTele₂, fun ⟨_, _, _, _, ts, _⟩ => [τ ts],
+    fun ⟨_, _, _, rv, _, _⟩ => [rv.down],
+    fun ⟨l₂, _, _, rv, _, _⟩ => ⌞ rv.down = .loc l₂.down ⌟ ∗ l₂.down ↦∅, .lerr,
+    fun r ⟨l₂, _, _, rv, _, _⟩ =>
+      ⌞ rv.down = .loc l₂.down ⌟ ∗ (⌞ r = .unit ⌟ ∗ l₂.down ↦∅)⟩
 
 /-- Context holding the (erroneous) recursive call of the drop glue. -/
 def dropCtx₁ (τ : TypedSubvariants.{0} → Ty) : SpecCtx.{0} :=
@@ -529,20 +531,20 @@ theorem wfSpec_dropBody_freed (τ : TypedSubvariants.{0} → Ty) :
               (.letIn .anon (.free (.val rv.down)) (.call "drop" [τ ts] [.var "v"]))))))
       ⌈ .lerr : λₗ r, ⌞ rv.down = .loc l₂.down ⌟ ∗ (⌞ r = .unit ⌟ ∗ l₂.down ↦∅) ⌉ :=
   .let_cut (tt := bTele₂)
-    (e₁ := fun _ _ _ rv _ => ULift.up (Expr.load (.val rv.down)))
-    (e₂ := fun _ _ _ rv ts => ULift.up (Expr.choice
+    (e₁ := fun ⟨_, _, _, rv, _, _⟩ => Expr.load (.val rv.down))
+    (e₂ := fun ⟨_, _, _, rv, ts, _⟩ => Expr.choice
       (.letIn (.named "g") (.pure (isUnitTest (.var "v")))
         (.letIn .anon (.assume (.var "g")) .unit))
       (.letIn (.named "g") (.pure (.not (isUnitTest (.var "v"))))
         (.letIn .anon (.assume (.var "g"))
-          (.letIn .anon (.free (.val rv.down)) (.call "drop" [τ ts] [.var "v"]))))))
+          (.letIn .anon (.free (.val rv.down)) (.call "drop" [τ ts] [.var "v"])))))
     (.reindex (tt := [tele (_ : Lifted.{1} Val) (_ : Lifted.{1} Loc)]) (tt' := bTele₂)
       (fun ⟨l₂, _, _, rv, _, _⟩ => ⟨rv, l₂, PUnit.unit⟩) .load_freed) (by simp)
 
 theorem wfSpecCtx_dropCtx₁ (τ : TypedSubvariants.{0} → Ty) : boxLib ≺ₛ dropCtx₁ τ :=
   .update (tt := bTele₂) (φ := dropDecl)
-    (tys := fun _ _ _ _ ts => ULift.up ⟨τ ts, PUnit.unit⟩)
-    (vals := fun _ _ _ rv _ => ULift.up ⟨rv.down, PUnit.unit⟩)
+    (tys := fun ⟨_, _, _, _, ts, _⟩ => ⟨τ ts, PUnit.unit⟩)
+    (vals := fun ⟨_, _, _, rv, _, _⟩ => ⟨rv.down, PUnit.unit⟩)
     .empty rfl boxLib_drop (wfSpec_dropBody_freed τ)
 
 /-- The RISL derivation for the body of `drop` on the self-referential box: it reads the
@@ -572,7 +574,7 @@ theorem wfSpec_dropBody (τ : TypedSubvariants.{0} → Ty)
           (⌞ rv.down = .loc l₂.down ⌟ ∗ (l₂.down ↦ .loc l₂.down ∗ (l₁.down ↦ v.down ∗ A v.down ts))) ⌉ := by
     refine .cons (tt := bTele₂) id (fun _ => List.Subset.refl _) ?_ ?_ (fun _ => rfl)
       (.frame (tt := bTele₂)
-        (R := fun _ l₁ v _ ts => l₁.down ↦ v.down ∗ A v.down ts)
+        (R := fun ⟨_, l₁, v, _, ts, _⟩ => l₁.down ↦ v.down ∗ A v.down ts)
         (.reindex (tt := [tele (_ : Lifted.{1} Val) (_ : Lifted.{1} Loc) (_ : Lifted.{1} Val)])
           (tt' := bTele₂)
           (fun ⟨l₂, _, _, rv, _, _⟩ => ⟨rv, l₂, .up (.loc l₂.down), PUnit.unit⟩) .load))
@@ -600,7 +602,7 @@ theorem wfSpec_dropBody (τ : TypedSubvariants.{0} → Ty)
           (⌞ rv.down = .loc l₂.down ⌟ ∗ (l₂.down ↦∅ ∗ (l₁.down ↦ v.down ∗ A v.down ts))) ⌉ := by
     refine .cons (tt := bTele₂) id (fun _ => List.Subset.refl _) ?_ ?_ (fun _ => rfl)
       (.frame (tt := bTele₂)
-        (R := fun _ l₁ v _ ts => l₁.down ↦ v.down ∗ A v.down ts)
+        (R := fun ⟨_, l₁, v, _, ts, _⟩ => l₁.down ↦ v.down ∗ A v.down ts)
         (.reindex (tt := [tele (_ : Lifted.{1} Val) (_ : Lifted.{1} Loc) (_ : Lifted.{1} Val)])
           (tt' := bTele₂)
           (fun ⟨l₂, _, _, rv, _, _⟩ => ⟨rv, l₂, .up (.loc l₂.down), PUnit.unit⟩) .free))
@@ -628,12 +630,12 @@ theorem wfSpec_dropBody (τ : TypedSubvariants.{0} → Ty)
           (⌞ r = .unit ⌟ ∗ (l₂.down ↦∅ ∗ (l₁.down ↦ v.down ∗ A v.down ts))) ⌉ := by
     refine .cons (tt := bTele₂) id (fun _ => List.Subset.refl _) ?_ ?_ (fun _ => rfl)
       (.frame (tt := bTele₂)
-        (R := fun _ l₁ v _ ts => l₁.down ↦ v.down ∗ A v.down ts)
+        (R := fun ⟨_, l₁, v, _, ts, _⟩ => l₁.down ↦ v.down ∗ A v.down ts)
         (.call (f := "drop") (tt := bTele₂)
-          (tys := fun _ _ _ _ ts => ULift.up [τ ts])
-          (vals := fun _ _ _ rv _ => ULift.up [rv.down])
-          (P := fun l₂ _ _ rv _ => ⌞ rv.down = .loc l₂.down ⌟ ∗ l₂.down ↦∅) (ε := .lerr)
-          (Φ := fun r l₂ _ _ rv _ =>
+          (tys := fun ⟨_, _, _, _, ts, _⟩ => [τ ts])
+          (vals := fun ⟨_, _, _, rv, _, _⟩ => [rv.down])
+          (P := fun ⟨l₂, _, _, rv, _, _⟩ => ⌞ rv.down = .loc l₂.down ⌟ ∗ l₂.down ↦∅) (ε := .lerr)
+          (Φ := fun r ⟨l₂, _, _, rv, _, _⟩ =>
             ⌞ rv.down = .loc l₂.down ⌟ ∗ (⌞ r = .unit ⌟ ∗ l₂.down ↦∅))
           (by simp [dropCtx₁, dropSpecFreed, SpecCtx.update_apply])))
     · rintro ⟨l₂, l₁, v, rv, ts⟩ h ⟨ha, h₂, rfl, d, hA, hrest⟩
@@ -659,9 +661,9 @@ theorem wfSpec_dropBody (τ : TypedSubvariants.{0} → Ty)
         (.call "drop" [τ ts] [.val rv.down]))
       ⌈ .lerr : λₗ r, ⌞ rv.down = .loc l₂.down ⌟ ∗
           (⌞ r = .unit ⌟ ∗ (l₂.down ↦∅ ∗ (l₁.down ↦ v.down ∗ A v.down ts))) ⌉ :=
-    .letIn (tt := bTele₂) (x := .anon) (v := fun _ _ _ _ _ => ULift.up Val.unit)
-      (e₁ := fun _ _ _ rv _ => ULift.up (Expr.free (.val rv.down)))
-      (e₂ := fun _ _ _ rv ts => ULift.up (Expr.call "drop" [τ ts] [.val rv.down]))
+    .letIn (tt := bTele₂) (x := .anon) (v := fun _ => Val.unit)
+      (e₁ := fun ⟨_, _, _, rv, _, _⟩ => Expr.free (.val rv.down))
+      (e₂ := fun ⟨_, _, _, rv, ts, _⟩ => Expr.call "drop" [τ ts] [.val rv.down])
       Dfree Dcall
   -- the value read is a pointer, so the glue takes its recursive branch
   have Dmain : dropCtx₁ τ ⊢ λₗ (l₂ : Lifted.{1} Loc) (l₁ : Lifted.{1} Loc) (v : Lifted.{1} Val) (rv : Lifted.{1} Val)
@@ -676,14 +678,14 @@ theorem wfSpec_dropBody (τ : TypedSubvariants.{0} → Ty)
               (.letIn .anon (.free (.val rv.down)) (.call "drop" [τ ts] [.var "v"]))))))
       ⌈ .lerr : λₗ r, ⌞ rv.down = .loc l₂.down ⌟ ∗
           (⌞ r = .unit ⌟ ∗ (l₂.down ↦∅ ∗ (l₁.down ↦ v.down ∗ A v.down ts))) ⌉ :=
-    .letIn (tt := bTele₂) (x := .named "v") (v := fun _ _ _ rv _ => rv)
-      (e₁ := fun _ _ _ rv _ => ULift.up (Expr.load (.val rv.down)))
-      (e₂ := fun _ _ _ rv ts => ULift.up (Expr.choice
+    .letIn (tt := bTele₂) (x := .named "v") (v := fun ⟨_, _, _, rv, _, _⟩ => rv.down)
+      (e₁ := fun ⟨_, _, _, rv, _, _⟩ => Expr.load (.val rv.down))
+      (e₂ := fun ⟨_, _, _, rv, ts, _⟩ => Expr.choice
         (.letIn (.named "g") (.pure (isUnitTest (.var "v")))
           (.letIn .anon (.assume (.var "g")) .unit))
         (.letIn (.named "g") (.pure (.not (isUnitTest (.var "v"))))
           (.letIn .anon (.assume (.var "g"))
-            (.letIn .anon (.free (.val rv.down)) (.call "drop" [τ ts] [.var "v"]))))))
+            (.letIn .anon (.free (.val rv.down)) (.call "drop" [τ ts] [.var "v"])))))
       Dload
       (wfSpec_not_isUnitTest_branch
         (P := fun ⟨l₂, l₁, v, rv, ts, _⟩ => ⌞ rv.down = .loc l₂.down ⌟ ∗
@@ -805,23 +807,23 @@ theorem tryRefute_drop : boxLib.TryRefute risl semSolver cycleCtx (.inr boxSourc
       refine .cons (tt := ςsDrop.callTele 1) (tt' := ςsDrop.callTele 1) id
         (fun _ => List.Subset.refl _) ?pre (fun _ _ _ hh => hh) (fun _ => rfl)
         (.ex (tt := ςsDrop.callTele 1) (X := Loc)
-          (e := fun _ rv ts => ULift.up (Expr.letIn (.named "v") (.load (.val rv.down))
+          (e := fun ⟨_, rv, ts, _⟩ => Expr.letIn (.named "v") (.load (.val rv.down))
             (.choice
               (.letIn (.named "g") (.pure (isUnitTest (.var "v")))
                 (.letIn .anon (.assume (.var "g")) .unit))
               (.letIn (.named "g") (.pure (.not (isUnitTest (.var "v"))))
                 (.letIn .anon (.assume (.var "g"))
                   (.letIn .anon (.free (.val rv.down))
-                    (.call "drop" [ts.ty] [.var "v"])))))))
+                    (.call "drop" [ts.ty] [.var "v"]))))))
           (.ex (tt := bTele) (X := Loc)
-            (e := fun _ _ rv ts => ULift.up (Expr.letIn (.named "v") (.load (.val rv.down))
+            (e := fun ⟨_, _, rv, ts, _⟩ => Expr.letIn (.named "v") (.load (.val rv.down))
               (.choice
                 (.letIn (.named "g") (.pure (isUnitTest (.var "v")))
                   (.letIn .anon (.assume (.var "g")) .unit))
                 (.letIn (.named "g") (.pure (.not (isUnitTest (.var "v"))))
                   (.letIn .anon (.assume (.var "g"))
                     (.letIn .anon (.free (.val rv.down))
-                      (.call "drop" [ts.ty] [.var "v"])))))))
+                      (.call "drop" [ts.ty] [.var "v"]))))))
             (wfSpec_dropBody (fun ts => ts.ty)
               (fun v ts => ts.get boxLib 0 v))))
       case pre =>

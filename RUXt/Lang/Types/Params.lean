@@ -286,13 +286,6 @@ the type argument `ρ i` of `τs`. -/
     (h : i < n) : get (τs.reindex .unit ρ n) i = get τs (ρ i) :=
   TeleArg.getD_toList_reindex _ _ _ h
 
-/-- Every type argument of a reindexed tuple is a type argument of the original tuple. -/
-theorem mem_toList_reindex {ρ : TyIdx → TyIdx} {n : ℕ} {τs : TyArgs m} {τ : Ty}
-    (h : τ ∈ TeleArg.toList (τs.reindex .unit ρ n)) : ∃ i < n, τ = get τs (ρ i) := by
-  rw [toList_reindex, List.mem_map] at h
-  obtain ⟨i, hi, rfl⟩ := h
-  exact ⟨i, List.mem_range.mp hi, rfl⟩
-
 /-- Reading a type argument off the first part of a split tuple. -/
 theorem get_splitUniform_left {n m : ℕ} (types : TyArgs (n + m)) {i : TyIdx} (hi : i < n) :
     get (types.splitUniform n m).1 i = get types i :=

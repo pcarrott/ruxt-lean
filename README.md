@@ -81,7 +81,7 @@ theorem. All paths below are relative to `RUXt/` and all declarations follow the
 | Path | Contents |
 |---|---|
 | `Lib/PFun.lean` | Partial maps, with the union/disjointness theory used for heaps. |
-| `Lib/Telescopes.lean` | Telescopes: dependent sequences of arguments, the curried functions over them and their argument tuples. |
+| `Lib/Telescopes.lean` | Telescopes: first-class dependent contexts (`Tele`) and their environments (`TeleArg`, nested `Σ`). Objects parameterised by a context are plain functions `TeleArg tt → A`, written with destructuring lambdas `fun ⟨x, y, _⟩ => …`. |
 | `Lang/Types/Basic.lean` | Types and type constructors (types with type parameters, referred to by index). |
 | `Lang/Types/Params.lean` | Type parameters: tuples of type arguments, concretisation and instantiation, renaming, anonymous forms, matching and the substitutions used by specialisation. |
 | `Lang/Expr.lean` | Syntax of the language: values, terms, pure expressions and expressions; evaluation of pure expressions and variable substitution. |

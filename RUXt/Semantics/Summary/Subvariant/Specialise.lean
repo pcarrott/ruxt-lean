@@ -38,14 +38,6 @@ theorem TeleArg.mapUniform_insertUniformPred {X : Type u} {Y : Type v} (f : X �
   | 0, _ => rfl
   | _ + 1, a => TeleArg.mapUniform_insertUniform f x j _ a
 
-/-- Mapping a function over the first part of a split tuple. -/
-theorem TeleArg.mapUniform_splitUniform_left {X : Type u} {Y : Type v} (f : X → Y) (n k : ℕ)
-    (a : TeleArg (Tele.uniform X (n + k))) :
-    ((a.splitUniform n k).1).mapUniform f = ((a.mapUniform f).splitUniform n k).1 :=
-  TeleArg.toList_injective _ _ (by
-    rw [TeleArg.toList_mapUniform, TeleArg.toList_splitUniform_left,
-      TeleArg.toList_splitUniform_left, TeleArg.toList_mapUniform, List.map_take])
-
 /-- The type arguments a specialised subvariant hands to the subvariant it specialises: the
 type arguments it keeps — read off `T` along `ρ` — with the pinned type inserted at the pinned
 position. -/

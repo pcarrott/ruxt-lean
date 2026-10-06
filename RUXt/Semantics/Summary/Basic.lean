@@ -29,7 +29,7 @@ def pre (ς : Summary) (Λ : Library) (args : TeleArg ς.ownedTele)
 /-- The source body, instantiated at the types of the typed subvariant arguments and with
 its formal input variables replaced by the corresponding values. -/
 def expr (ς : Summary) (args : TeleArg ς.ownedTele) (S : SubvArgs.{0} ς.src.arity) : Expr :=
-  (ς.src.fn.body.apply args.fst |>.apply S.tys).substs
+  (ς.src.fn.body args.fst S.tys).substs
     ς.src.fn.paramNames (Term.ofVals args.snd.toList)
 /-- The postcondition of a summary, as the assertion component of a triple. -/
 def post (ς : Summary) (r : Val) (args : TeleArg ς.ownedTele)
@@ -355,7 +355,7 @@ types of the typed subvariant arguments and with the formal parameters replaced 
 values. -/
 theorem expr_apply (ς : Summary) (S : SubvArgs.{0} ς.src.arity) (args : TeleArg ς.ownedTele) :
     ς.expr args S =
-      ((ς.src.fn.body.apply args.fst).apply S.tys).substs
+      (ς.src.fn.body args.fst S.tys).substs
         ς.src.fn.paramNames (Term.ofVals args.snd.toList) :=
   rfl
 /-- The postcondition of a summary at a tuple of arguments. -/
@@ -453,7 +453,7 @@ owns exactly what its input value owns as an inhabitant of it. -/
 /-- The signature of the identity source at a type argument: its single parameter `x` gets
 that very type. -/
 @[simp] theorem id_src_sig (Λ : Library) (τ₀ : Ty) :
-    (id Λ).src.fn.sig.apply ⟨τ₀, PUnit.unit⟩ = [("x", τ₀)] := rfl
+    (id Λ).src.fn.sig ⟨τ₀, PUnit.unit⟩ = [("x", τ₀)] := rfl
 /-- The identity summary runs the value it is given. -/
 @[simp] theorem id_expr (Λ : Library) (S : SubvArgs.{0} 1) (v : Val) :
     (id Λ).expr ⟨v, PUnit.unit⟩ S = Expr.val v := rfl

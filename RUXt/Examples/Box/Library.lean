@@ -36,7 +36,7 @@ abbrev TyConsId.boxT : TyConsId := .custom "Box" [.param 0]
 abbrev boxBody : Expr :=
   .letIn (.named "l") (.alloc (.int 1))
     (.letIn .anon (.store (.var "l") (.var "x")) (.var "l"))
-def boxDecl : FunDecl := ⟨1, ⟨[("x", .param 0)], fun _ => boxBody, .boxT, true⟩⟩
+def boxDecl : FunDecl := ⟨1, ⟨[("x", .param 0)], fun _ _ => boxBody, .boxT, true⟩⟩
 def boxImpl (τ : Ty) : FunImpl := boxDecl.concretise ⟨τ, PUnit.unit⟩
 
 /-- `rebox<T>(x : Box<T>) -> Box<T>`: the same body as `box`, so the result really is a
@@ -44,14 +44,14 @@ def boxImpl (τ : Ty) : FunImpl := boxDecl.concretise ⟨τ, PUnit.unit⟩
 abbrev reboxBody : Expr :=
   .letIn (.named "l") (.alloc (.int 1))
     (.letIn .anon (.store (.var "l") (.var "x")) (.var "l"))
-def reboxDecl : FunDecl := ⟨1, ⟨[("x", .boxT)], fun _ => reboxBody, .boxT, true⟩⟩
+def reboxDecl : FunDecl := ⟨1, ⟨[("x", .boxT)], fun _ _ => reboxBody, .boxT, true⟩⟩
 def reboxImpl (τ : Ty) : FunImpl := reboxDecl.concretise ⟨τ, PUnit.unit⟩
 
 /-- `cycle<T>(x : Box<T>) -> Box<T>`: `let _ = store x x in x`.  It overwrites the value the
 box holds with the head pointer itself, so the head cell points at itself. -/
 abbrev cycleBody : Expr :=
   .letIn .anon (.store (.var "x") (.var "x")) (.var "x")
-def cycleDecl : FunDecl := ⟨1, ⟨[("x", .boxT)], fun _ => cycleBody, .boxT, true⟩⟩
+def cycleDecl : FunDecl := ⟨1, ⟨[("x", .boxT)], fun _ _ => cycleBody, .boxT, true⟩⟩
 def cycleImpl (τ : Ty) : FunImpl := cycleDecl.concretise ⟨τ, PUnit.unit⟩
 
 /-- `p == ()`: the test the drop glue performs on the value it reads out of a box. -/
@@ -72,7 +72,7 @@ abbrev dropBody (T : Ty) : Expr :=
       (.letIn (.named "g") (.pure (.not (isUnitTest (.var "v"))))
         (.letIn .anon (.assume (.var "g"))
           (.letIn .anon (.free (.var "x")) (.call "drop" [T] [.var "v"])))))
-def dropDecl : FunDecl := ⟨1, ⟨[("x", .boxT)], fun T => dropBody T, .unit, true⟩⟩
+def dropDecl : FunDecl := ⟨1, ⟨[("x", .boxT)], fun _ ⟨T, _⟩ => dropBody T, .unit, true⟩⟩
 def dropImpl (τ : Ty) : FunImpl := dropDecl.concretise ⟨τ, PUnit.unit⟩
 
 /-- The `Box` library. -/
@@ -221,7 +221,7 @@ theorem wfSpec_alloc_store (A : Loc → Loc → Val → Val → TypedSubvariants
       ⌈ A l₂.down l₁.down v.down rv.down ts ∗ .emp ⌉ (Expr.alloc (.int 1))
       ⌈ .lok : λₗ r, A l₂.down l₁.down v.down rv.down ts ∗
           (⌞ r = .loc l₂.down ⌟ ∗ l₂.down ↦?) ⌉ :=
-    .frame (tt := bTele₂) (R := fun l₂ l₁ v rv ts => A l₂.down l₁.down v.down rv.down ts) Dalloc
+    .frame (tt := bTele₂) (R := fun ⟨l₂, l₁, v, rv, ts, _⟩ => A l₂.down l₁.down v.down rv.down ts) Dalloc
   -- store the input value into the freshly allocated block
   have Dstore : (∅ : SpecCtx.{0}) ⊢ λₗ (l₂ : Lifted.{1} Loc) (l₁ : Lifted.{1} Loc)
       (v : Lifted.{1} Val) (rv : Lifted.{1} Val) (ts : TypedSubvariants.{0}),
@@ -232,7 +232,7 @@ theorem wfSpec_alloc_store (A : Loc → Loc → Val → Val → TypedSubvariants
           (⌞ r = .unit ⌟ ∗ l₂.down ↦ rv.down) ⌉ := by
     refine .cons (tt := bTele₂) id (fun _ => List.Subset.refl _) ?pre ?post (fun _ => rfl)
       (.frame (tt := bTele₂)
-        (R := fun l₂ l₁ v rv ts => A l₂.down l₁.down v.down rv.down ts)
+        (R := fun ⟨l₂, l₁, v, rv, ts, _⟩ => A l₂.down l₁.down v.down rv.down ts)
         (.reindex (tt := [tele (_ : Lifted.{1} Val) (_ : Lifted.{1} Loc) (_ : Lifted.{1} Val)])
           (tt' := bTele₂)
           (fun ⟨l₂, _, _, rv, _, _⟩ => ⟨.up (Val.loc l₂.down), l₂, rv, PUnit.unit⟩) .store_uninit))
@@ -249,7 +249,7 @@ theorem wfSpec_alloc_store (A : Loc → Loc → Val → Val → TypedSubvariants
     refine .cons (tt := bTele₂) id (fun _ => List.Subset.refl _) ?pre ?post
       (fun _ => rfl)
       (.frame (tt := bTele₂)
-        (R := fun l₂ l₁ v rv ts =>
+        (R := fun ⟨l₂, l₁, v, rv, ts, _⟩ =>
           (A l₂.down l₁.down v.down rv.down ts ∗ ⌞ Val.loc l₂.down = .loc l₂.down ⌟) ∗
             (⌞ Val.unit = .unit ⌟ ∗ l₂.down ↦ rv.down))
         (.reindex (tt := [tele (_ : Lifted.{1} Pure)]) (tt' := bTele₂)
@@ -275,15 +275,15 @@ theorem wfSpec_alloc_store (A : Loc → Loc → Val → Val → TypedSubvariants
           (⌞ r = .loc l₂.down ⌟ ∗ l₂.down ↦ rv.down) ⌉ := by
     refine .cons (tt := bTele₂) id (fun _ => List.Subset.refl _) ?pre
       (fun _ _ _ hh => hh) (fun _ => rfl)
-      (.letIn (tt := bTele₂) (x := .anon) (v := fun _ _ _ _ _ => .up Val.unit)
-        (e₁ := fun l₂ _ _ rv _ => .up (Expr.store (.val (.loc l₂.down)) (.val rv.down)))
-        (e₂ := fun l₂ _ _ _ _ => .up (Expr.pure (.val (.loc l₂.down)))) Dstore Dret)
+      (.letIn (tt := bTele₂) (x := .anon) (v := fun _ => Val.unit)
+        (e₁ := fun ⟨l₂, _, _, rv, _, _⟩ => Expr.store (.val (.loc l₂.down)) (.val rv.down))
+        (e₂ := fun ⟨l₂, _, _, _, _, _⟩ => Expr.pure (.val (.loc l₂.down))) Dstore Dret)
     case pre => exact fun _ _ hh => hProp_star_assoc.mp hh
   -- sequence the allocation and the rest of the body
-  exact .letIn (tt := bTele₂) (x := .named "l") (v := fun l₂ _ _ _ _ => .up (Val.loc l₂.down))
-    (e₁ := fun _ _ _ _ _ => .up (Expr.alloc (.int 1)))
-    (e₂ := fun _ _ _ rv _ =>
-      .up (Expr.letIn .anon (.store (.var "l") (.val rv.down)) (.var "l")))
+  exact .letIn (tt := bTele₂) (x := .named "l") (v := fun ⟨l₂, _, _, _, _, _⟩ => Val.loc l₂.down)
+    (e₁ := fun _ => Expr.alloc (.int 1))
+    (e₂ := fun ⟨_, _, _, rv, _, _⟩ =>
+      Expr.letIn .anon (.store (.var "l") (.val rv.down)) (.var "l"))
     Dalloc' Dinner
 
 

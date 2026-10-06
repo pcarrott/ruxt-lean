@@ -42,7 +42,7 @@ def Source.specialise (m : ℕ) (s : Source)
       -- The result type constructor is that of `s`, specialised
       ty := s.fn.ty.substCons (τ.specSubst i)
       safe := true
-      body := teleBind fun args => teleBind fun types =>
+      body := fun args types =>
         -- Cut out the type arguments of `τ` and the free ones
         let ⟨τs, free⟩ := (types.block .unit i τ.arity, types.block .unit arity _)
         let pinnedBody :=
@@ -55,7 +55,7 @@ def Source.specialise (m : ℕ) (s : Source)
             let after := types.block .unit (i + τ.arity) (s.arity - 1 - i)
             before.appendUniform (after.consUniform pinnedTy) |>.reindex .unit id s.arity
           -- Instantiate the body of `s` at the pinned type
-          s.fn.body |>.apply args.fst |>.apply types
+          s.fn.body args.fst types
         -- Let-bind the supplied sources to the pinned parameters in front of it
         pinnedBody.bindSources m types pinned srcs free args.snd }
   where srcs := ςs.map (·.src)

@@ -105,7 +105,7 @@ def Expr.bindSources (m : ℕ) {N : ℕ} (types : TyArgs N) (body : Expr)
       let types := types.reindex .unit (τ.params.getD · 0) τ.arity
       let types := types.appendUniform own |>.reindex .unit id s.arity
       -- Instantiate the body of the head source
-      let body := s.fn.body |>.apply args.fst |>.apply types
+      let body := s.fn.body args.fst types
       -- Rebind its parameters to their renamed counterparts
       s.fn.paramNames.foldr (fun x =>
         .letIn (.named x) (.var (PVar.freshen m srcs.length x))) body

@@ -19,19 +19,19 @@ abbrev TyConsId.even : TyConsId := .custom "Even" []
 abbrev newBody : Expr :=
   .pure ((Pure.var "z").add ((Pure.var "z").mod (.int 2)).minus)
 /-- Creates an even number from an integer. -/
-def newDecl : FunDecl := ⟨0, ⟨[("z", .int)], newBody, .even, true⟩⟩
+def newDecl : FunDecl := ⟨0, ⟨[("z", .int)], fun ⟨⟩ ⟨⟩ => newBody, .even, true⟩⟩
 def newImpl : FunImpl := newDecl.concretise .unit
 
 abbrev succBody : Expr :=
   .pure ((Pure.var "x").add (.int 1))
 /-- Increments its input number. -/
-def succDecl : FunDecl := ⟨0, ⟨[("x", .even)], succBody, .even, true⟩⟩
+def succDecl : FunDecl := ⟨0, ⟨[("x", .even)], fun ⟨⟩ ⟨⟩ => succBody, .even, true⟩⟩
 def succImpl : FunImpl := succDecl.concretise .unit
 
 abbrev nextBody : Expr :=
   .letIn (.named "x") (.call "succ" [] [.var "x"]) (.call "succ" [] [.var "x"])
 /-- Computes the next even number. -/
-def nextDecl : FunDecl := ⟨0, ⟨[("x", .even)], nextBody, .even, true⟩⟩
+def nextDecl : FunDecl := ⟨0, ⟨[("x", .even)], fun ⟨⟩ ⟨⟩ => nextBody, .even, true⟩⟩
 def nextImpl : FunImpl := nextDecl.concretise .unit
 
 abbrev isEven (p : Pure) : Pure :=
@@ -42,7 +42,7 @@ abbrev noopBody : Expr := .choice
   (.letIn (.named "g") (.pure (.not (isEven (.var "x"))))
     (.letIn .anon (.assume (.var "g")) .error))
 /-- Performs no operation on even inputs, exhibits UB on odd inputs. -/
-def noopDecl : FunDecl := ⟨0, ⟨[("x", .even)], noopBody, .unit, true⟩⟩
+def noopDecl : FunDecl := ⟨0, ⟨[("x", .even)], fun ⟨⟩ ⟨⟩ => noopBody, .unit, true⟩⟩
 def noopImpl : FunImpl := noopDecl.concretise .unit
 
 /-- The `Even` library. -/
@@ -85,11 +85,11 @@ theorem evenLib_inst_noop : evenLib.Instantiates "noop" [] noopImpl :=
 def ςs1 : Picks := [(.int, Summary.base .int)]
 /-- The postcondition obtained from executing the `new` function. -/
 def evenPost : ςs1.DerivedPost 0 :=
-  fun r z v => ⌞ v.down = .int z.down ⌟ ∗
+  fun r ⟨z, v, ⟨⟩⟩ => ⌞ v.down = .int z.down ⌟ ∗
   ⌞ some r = ((Pure.val v.down).add ((Pure.val v.down).mod (.int 2)).minus).eval ⌟
 /-- Simplified evenPost: `new` maps `.int z` to the even `.int (z-z%2)`. -/
 def evenSubv : newDecl.Subvariant ςs1 :=
-  fun r z => ⌞ r = .int (z.down - z.down.tmod 2) ⌟
+  fun r ⟨z, ⟨⟩⟩ => ⌞ r = .int (z.down - z.down.tmod 2) ⌟
 
 theorem evenPost_simplifiesTo : evenPost.SimplifiesTo semSolver evenSubv :=
   semSolver_simplifiesTo.mpr <| by
@@ -135,7 +135,7 @@ theorem tryRefute_even : evenLib.TryRefute risl semSolver (SummCtx.base evenLib)
         (fun _ => rfl)
         -- Frame .int equality
         (.frame (tt := ςs1.callTele 0)
-          (R := fun z v => ⌞ v.down = .int z.down ⌟)
+          (R := fun ⟨z, v, _⟩ => ⌞ v.down = .int z.down ⌟)
         -- Evaluate modulo operation as a pure expression
         (.reindex (tt := [tele (_ : Lifted.{1} Pure)]) (tt' := ςs1.callTele 0)
           (fun ⟨_, v, _⟩ =>
@@ -155,11 +155,11 @@ theorem tryRefute_even : evenLib.TryRefute risl semSolver (SummCtx.base evenLib)
 def ςs2 : Picks := [(.even, evenSumm)]
 /-- The postcondition obtained from executing the `succ` function. -/
 def oddPost : ςs2.DerivedPost 0 :=
-  fun r z v => evenSubv v.down z ∗
+  fun r ⟨z, v, ⟨⟩⟩ => evenSubv v.down ⟨z, .unit⟩ ∗
   ⌞ some r = ((Pure.val v.down).add (.int 1)).eval ⌟
 /-- Simplified oddPost: `succ` maps the even `.int (z-z%2)` to the odd `.int ((z-z%2)+1)`. -/
 def oddSubv : succDecl.Subvariant ςs2 :=
-  fun r z => ⌞ r = .int (z.down - z.down.tmod 2 + 1) ⌟
+  fun r ⟨z, ⟨⟩⟩ => ⌞ r = .int (z.down - z.down.tmod 2 + 1) ⌟
 
 theorem oddPost_simplifiesTo : oddPost.SimplifiesTo semSolver oddSubv :=
   semSolver_simplifiesTo.mpr <| by
@@ -204,7 +204,7 @@ theorem tryRefute_odd : evenLib.TryRefute risl semSolver evenCtx (.inl (.even, o
         (fun _ => rfl)
         -- Frame the resources of the picked summary
         (.frame (tt := ςs2.callTele 0)
-          (R := fun z v => evenSubv v.down z)
+          (R := fun ⟨z, v, _⟩ => evenSubv v.down ⟨z, PUnit.unit⟩)
         -- Evaluate increment as a pure expression
         (.reindex (tt := [tele (_ : Lifted.{1} Pure)]) (tt' := ςs2.callTele 0)
           (fun ⟨_, v, _⟩ => ⟨.up ((Pure.val v.down).add (.int 1)), .unit⟩) .pure))
@@ -225,7 +225,7 @@ theorem tryRefute_odd : evenLib.TryRefute risl semSolver evenCtx (.inl (.even, o
 def ςs3 : Picks := [(.even, oddSumm)]
 /-- The postcondition obtained from executing the `noop` function. -/
 def noopPost : ςs3.DerivedPost 0 :=
-  fun r z v => oddSubv v.down z ∗
+  fun r ⟨z, v, ⟨⟩⟩ => oddSubv v.down ⟨z, .unit⟩ ∗
   ⌞ some (.bool true) = (isEven (.val v.down)).not.eval ⌟ ∗ ⌞ r = .unit ⌟
 /-- Simplified noopPost: it reaches an error state for the odd input `.int ((z-z%2)+1)`, returning .unit -/
 def noopSubv : noopDecl.Subvariant ςs3 :=
@@ -287,19 +287,19 @@ theorem tryRefute_noop : evenLib.TryRefute risl semSolver oddCtx (.inr sourceExp
         (fun _ => rfl) (
         -- Choose the error branch
         .choice (tt := ςs3.callTele 0)
-          (e₁ := fun _ v => .up (.letIn (.named "g") (.pure (isEven (.val v.down)))
-            (.letIn .anon (.assume (.var "g")) .unit)))
-          (e₂ := fun _ v => .up (.letIn (.named "g") (.pure (.not (isEven (.val v.down))))
-            (.letIn .anon (.assume (.var "g")) .error)))
+          (e₁ := fun ⟨_, v, _⟩ => .letIn (.named "g") (.pure (isEven (.val v.down)))
+            (.letIn .anon (.assume (.var "g")) .unit))
+          (e₂ := fun ⟨_, v, _⟩ => .letIn (.named "g") (.pure (.not (isEven (.val v.down))))
+            (.letIn .anon (.assume (.var "g")) .error))
           (Or.inr rfl)
         -- Frame .int equality
         (.frame (tt := ςs3.callTele 0)
-          (R := fun z v => oddSubv v.down z)
-          (Φ := fun r _ v =>
+          (R := fun ⟨z, v, _⟩ => oddSubv v.down ⟨z, PUnit.unit⟩)
+          (Φ := fun r ⟨_, v, _⟩ =>
             ⌞ some (.bool true) = (isEven (.val v.down)).not.eval ⌟ ∗ ⌞ r = .unit ⌟)
         -- Evaluate let-binding for the guard
-        (.letIn (tt := ςs3.callTele 0) (v := fun _ _ => .up (.bool true))
-          (e₂ := fun _ _ => .up (.letIn .anon (.assume (.var "g")) .error))
+        (.letIn (tt := ςs3.callTele 0) (v := fun _ => (.bool true))
+          (e₂ := fun _ => (.letIn .anon (.assume (.var "g")) .error))
         -- Evaluate guard as a pure expression
         (.reindex (tt := [tele (_ : Lifted.{1} Pure)]) (tt' := ςs3.callTele 0)
           (fun ⟨_, v, _⟩ => ⟨.up (.not (isEven (.val v.down))), .unit⟩) .pure)
@@ -308,11 +308,11 @@ theorem tryRefute_noop : evenLib.TryRefute risl semSolver oddCtx (.inr sourceExp
           ?consEmp (fun _ _ _ hh => hh) (fun _ => rfl)
         -- Frame the guard evaluation
         (.frame (tt := ςs3.callTele 0)
-          (R := fun _ v =>
+          (R := fun ⟨_, v, _⟩ =>
             ⌞ some (.bool true) = (isEven (.val v.down)).not.eval ⌟)
         -- Evaluate let-binding for assume
-        (.letIn (tt := ςs3.callTele 0) (x := .anon) (v := fun _ _ => .up .unit)
-          (e₂ := fun _ _ => .up .error)
+        (.letIn (tt := ςs3.callTele 0) (x := .anon) (v := fun _ => .unit)
+          (e₂ := fun _ => .error)
         -- Evaluate assume
         (.reindex (tt := [tele]) (fun _ => .unit) .assume)
         -- Remove unit equality from precondition

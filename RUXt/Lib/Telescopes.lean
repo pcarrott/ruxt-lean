@@ -2,16 +2,27 @@ import Mathlib.Tactic
 
 /-!
 # Telescopes
-A telescope `Tele` describes a (dependent) sequence of arguments. Given a telescope `TT`,
-`TeleFun TT A` (notation `TT -t> A`) is the type of curried functions taking exactly the
-arguments described by `TT` and returning an `A`, while `TeleArg TT` is the type of a
-single "argument tuple" for `TT`. `TeleFun.apply` applies a telescopic function to such a
-tuple.
+A telescope `Tele` describes a dependent context: a sequence of binders, each of whose types
+may depend on the values of the earlier ones.  It is first-class data, so contexts can be
+computed and inspected (`Tele.uniform`, `Tele.app`, `Tele.ulift`, the `[tele ...]` notation).
+
+Given a telescope `TT`:
+
+* `TeleArg TT` is the type of *environments* of `TT`: one value for each binder, i.e. the
+  nested dependent pair `Σ x₁, Σ x₂, …, PUnit`.  Environments are built with anonymous
+  constructors `⟨x₁, x₂, …, PUnit.unit⟩` and taken apart with projections or, preferably,
+  patterns: `fun ⟨x₁, x₂, _⟩ => b` destructures an environment of a two-binder telescope.
+  `TeleArg.app`/`fst`/`snd` join and split environments of an appended telescope.  The
+  `*Uniform`/`toList`/`ofList` operations treat environments of a uniform telescope as lists.
+* An object parameterised by the context `TT` is an ordinary function `TeleArg TT → A`.
+  Instantiating it with an environment is plain function application.  `A` may live in any
+  universe, so no lifting is needed for small result types.
 
 ## Universe polymorphism
-A telescope `Tele.{u}` stores binder types in `Type u`, and the result type `A` of a
-telescopic function lives in that same `Type u`.  A result type in a smaller universe is
-lifted into `Type u` (`TeleLift`).
+A telescope `Tele.{u}` stores binder types in `Type u`.  A binder of a smaller type is lifted
+into `Type u` (`Lifted`, or `Tele.ulift` for a whole telescope); this cannot be avoided, since
+Lean has no cumulativity.  Result types never need lifting, since a parameterised object is a
+function of `TeleArg TT`.
 -/
 
 namespace RUXt
@@ -32,17 +43,8 @@ def Tele.uniform (X : Type u) : ℕ → Tele
   | 0 => .nil
   | n + 1 => .cons (fun _ : X => Tele.uniform X n)
 
-/-- The telescope version of a function type: `TeleFun TT A` is the type of functions
-taking the arguments described by `TT` and returning `A` (notation `TT -t> A`).
-The result type `A` lives in the universe `Type u` of the telescope's binders; a result in a
-smaller universe, `Type 0` in particular, is lifted there first (`TeleLift`). -/
-def TeleFun : Tele.{u} → Type u → Type u
-  | Tele.nil, A => A
-  | Tele.cons binder, A => ∀ x, TeleFun (binder x) A
-@[inherit_doc] infixr:25 " -t> " => TeleFun
-
-/-- A sigma-like type for an "element" of a telescope `TT`, i.e. the data needed to obtain
-an `A` from a `TT -t> A`. -/
+/-- The environments of a telescope `TT`: one value for each binder, as the nested dependent pair
+`Σ x₁, Σ x₂, …, PUnit`. -/
 def TeleArg : Tele.{u} → Type u
   | Tele.nil => PUnit
   | Tele.cons binder => Σ x, TeleArg (binder x)
@@ -68,41 +70,9 @@ def TeleArg.insertUniformPred {X : Type u} (x : X) (i : ℕ) : {n : ℕ} →
   | 0, _ => PUnit.unit
   | _ + 1, args => TeleArg.insertUniform x i args
 
-/-- Apply a telescopic function to an argument tuple. -/
-def TeleFun.apply : {TT : Tele.{u}} → {A : Type u} → (TT -t> A) → TeleArg TT → A
-  | Tele.nil, _, t, _ => t
-  | Tele.cons _, _, f, a => apply (f a.1) a.2
-
-/-- Map a function over the result of a telescopic function. -/
-def TeleFun.map {A B : Type u} :
-    {TT : Tele.{u}} → (TT -t> A) → (A → B) → (TT -t> B)
-  | Tele.nil, t, F => F t
-  | Tele.cons _, t, F => fun x => map (t x) F
-
-/-- Turn an ordinary function on argument tuples into a telescopic function. -/
-def teleBind : {TT : Tele.{u}} → {A : Type u} → (TeleArg TT → A) → (TT -t> A)
-  | Tele.nil, _, F => F PUnit.unit
-  | Tele.cons _, _, F => fun x => teleBind (fun a => F ⟨x, a⟩)
-
-/-- A small type, lifted into the universe `u` of a telescope. -/
+/-- A small type, lifted into the universe `u` of a telescope.  Used for binders of small type
+(e.g. `[tele (l : Lifted Loc)]` in a `Tele.{1}`). -/
 abbrev Lifted (A : Type) : Type u := ULift.{u, 0} A
-
-/-- Telescopic functions into a *small* type `A`, i.e. one in `Type 0`.  The result type of a
-telescopic function lives in the universe of the binders of its telescope, so for a telescope
-in a universe `u > 0` the result is lifted there. -/
-abbrev TeleLift (TT : Tele.{u}) (A : Type) : Type u :=
-  TT -t> Lifted.{u} A
-
-/-- Apply a telescopic function into a small type, and read off its unlifted value.
-Lives in the `TeleFun` namespace, so that `f.at args` is available whichever of `TT -t>
-Lifted A` and `TeleLift TT A` the type of `f` is spelled as. -/
-abbrev TeleFun.at {TT : Tele.{u}} {A : Type} (f : TT -t> Lifted.{u} A) (args : TeleArg TT) :
-    A :=
-  (f.apply args).down
-
-/-- Build a telescopic function into a small type out of an ordinary function. -/
-abbrev teleLift {TT : Tele.{u}} {A : Type} (f : TeleArg TT → A) : TeleLift TT A :=
-  teleBind fun args => .up (f args)
 
 /-- Concatenate two telescopes. -/
 def Tele.app : Tele.{u} → Tele.{u} → Tele.{u}
@@ -188,20 +158,6 @@ def TeleArg.block {X : Type _} (dflt : X) {n : ℕ} (a : TeleArg (Tele.uniform X
     (start len : ℕ) : TeleArg (Tele.uniform X len) :=
   a.reindex dflt (start + ·) len
 
-/-! ### Telescopic functions into well-sized argument tuples -/
-
-/-- Read a telescopic function into *well-sized* argument tuples — tuples for the uniform
-telescope of length `n` — as one into lists. -/
-abbrev TeleFun.toListLift {TT : Tele.{u}} {X : Type} {n : ℕ}
-    (f : TeleLift TT (TeleArg (Tele.uniform X n))) : TeleLift TT (List X) :=
-  teleLift fun args => (f.at args).toList
-
-/-- Read a telescopic function into lists as one into well-sized argument tuples, padding
-with `dflt` and truncating where a list does not have the expected length `n`. -/
-abbrev TeleFun.ofListLift {TT : Tele.{u}} {X : Type} (n : ℕ) (dflt : X)
-    (f : TeleLift TT (List X)) : TeleLift TT (TeleArg (Tele.uniform X n)) :=
-  teleLift fun args => TeleArg.ofListPad dflt n (f.at args)
-
 /-- Split a uniform telescope at a specified length. -/
 def TeleArg.splitUniform {X : Type _} (n m : ℕ) (args : TeleArg (Tele.uniform X (n + m))) :
     TeleArg (Tele.uniform X n) × TeleArg (Tele.uniform X m) := by
@@ -256,40 +212,6 @@ macro_rules
       return e
 
 /-! ## Properties -/
-
-/-- Telescopic application and mapping commute. -/
-theorem teleMap_apply {A B : Type u} (F : A → B) :
-    {TT : Tele.{u}} → (t : TT -t> A) → (y : TeleArg TT) →
-      (t.map F).apply y = F (t.apply y)
-  | Tele.nil, _, _ => rfl
-  | Tele.cons _, t, y => teleMap_apply F (t y.1) y.2
-
-/-- Application to a bound telescopic function recovers the original function. -/
-theorem teleBind_apply {A : Type u} :
-    {TT : Tele.{u}} → (f : TeleArg TT → A) → (x : TeleArg TT) →
-      (teleBind f).apply x = f x
-  | Tele.nil, f, x => by
-      cases x; rfl
-  | Tele.cons _, f, x => by
-      cases x with
-      | mk x a => exact teleBind_apply (fun a => f ⟨x, a⟩) a
-
-@[simp] theorem teleLift_at {TT : Tele.{u}} {A : Type} (f : TeleArg TT → A)
-    (args : TeleArg TT) : (teleLift f).at args = f args := by
-  rw [TeleFun.at, teleLift, teleBind_apply]
-
-/-- Telescopic functions are determined by their action on argument tuples. -/
-theorem TeleFun.ext {A : Type u} :
-    ∀ {TT : Tele.{u}} (f g : TT -t> A), (∀ x : TeleArg TT, f.apply x = g.apply x) → f = g
-  | Tele.nil, _, _, h => h PUnit.unit
-  | Tele.cons _, f, g, h =>
-      funext fun x => TeleFun.ext (f x) (g x) (fun args => h ⟨x, args⟩)
-
-/-- Rebuilding a telescopic function into a small type from its values recovers it. -/
-@[simp] theorem teleLift_eta {TT : Tele.{u}} {A : Type} (f : TeleLift TT A) :
-    (teleLift fun args => f.at args) = f :=
-  TeleFun.ext _ _ fun args => by
-    rw [teleLift, teleBind_apply]
 
 @[simp] theorem TeleArg.fst_append {tt1 tt2 : Tele.{u}}
     (arg1 : TeleArg tt1) (arg2 : TeleArg tt2) :
@@ -363,18 +285,6 @@ arguments. -/
     (h ▸ x : TeleArg (Tele.uniform X N)).toList = x.toList := by
   subst h; rfl
 
-/-- Rebuilding an argument tuple from its list of arguments recovers the tuple. -/
-@[simp] theorem TeleArg.ofList_toList {X : Type _} {N : ℕ} (args : TeleArg (Tele.uniform X N))
-    (h : args.toList.length = N) :
-    (h ▸ TeleArg.ofList args.toList : TeleArg (Tele.uniform X N)) = args :=
-  TeleArg.toList_injective _ _ (by rw [TeleArg.toList_transport, TeleArg.toList_ofList])
-
-theorem TeleArg.replicate_toList {X : Type _} (N : ℕ) (x : X) :
-    (TeleArg.replicate N x).toList = List.replicate N x := by
-  induction N with
-  | zero => rfl
-  | succ n ih => simp [TeleArg.replicate, TeleArg.toList, List.replicate, ih]
-
 @[simp] theorem TeleArg.toList_consUniform {X : Type _} {n : ℕ} (x : X)
     (a : TeleArg (Tele.uniform X n)) : (a.consUniform x).toList = x :: a.toList :=
   rfl
@@ -390,31 +300,6 @@ theorem TeleArg.replicate_toList {X : Type _} (N : ℕ) (x : X) :
   rw [TeleArg.ofListPad, TeleArg.toList_transport, TeleArg.toList_ofList, ← h,
     List.take_left']
   simp
-
-/-- Reading a telescopic function into lists of the expected length as one into well-sized
-argument tuples and back recovers it. -/
-@[simp] theorem TeleFun.toListLift_ofListLift {TT : Tele.{u}} {X : Type} {n : ℕ} (dflt : X)
-    (f : TeleLift TT (List X)) (h : ∀ args, (f.at args).length = n) :
-    (TeleFun.ofListLift n dflt f).toListLift = f :=
-  TeleFun.ext _ _ fun args => by
-    rw [teleBind_apply]
-    simp only [TeleFun.ofListLift, teleLift_at, TeleArg.toList_ofListPad dflt (h args)]
-
-/-- Transporting an argument tuple for a telescope extended by a uniform telescope along an
-equality of lengths leaves the first component alone. -/
-theorem TeleArg.fst_cast_uniform {X : Type u} {tt : Tele.{u}} {n m : ℕ} (h : n = m)
-    (a : TeleArg (tt.app (Tele.uniform X n))) :
-    (cast (congrArg TeleArg (congrArg (fun k => tt.app (Tele.uniform X k)) h)) a).fst
-      = a.fst := by
-  cases h; rfl
-
-/-- Transporting an argument tuple for a telescope extended by a uniform telescope along an
-equality of lengths leaves the arguments of its second component alone. -/
-theorem TeleArg.toList_snd_cast_uniform {X : Type u} {tt : Tele.{u}} {n m : ℕ} (h : n = m)
-    (a : TeleArg (tt.app (Tele.uniform X n))) :
-    (cast (congrArg TeleArg (congrArg (fun k => tt.app (Tele.uniform X k)) h)) a).snd.toList
-      = a.snd.toList := by
-  cases h; rfl
 
 theorem splitUniform_toList {X : Type _} (n m : ℕ)
     (types : TeleArg (.uniform X (n + m))) :
@@ -489,14 +374,6 @@ theorem TeleArg.getD_toList_splitUniform_left {X : Type _} (d : X) {n m : ℕ}
   | cons binder ih =>
       rintro ⟨x, rest⟩
       rw [TeleArg.uliftArg, TeleArg.ulower, ih x rest]
-
-@[simp] theorem TeleArg.uliftArg_nil (arg : TeleArg (Tele.nil.{v})) :
-    TeleArg.uliftArg.{v, w} arg = PUnit.unit := rfl
-
-@[simp] theorem TeleArg.uliftArg_cons {X : Type v} {binder : X → Tele.{v}} (x : X)
-    (rest : TeleArg (binder x)) :
-    TeleArg.uliftArg.{v, w} (tt := Tele.cons binder) ⟨x, rest⟩ =
-      ⟨ULift.up x, TeleArg.uliftArg rest⟩ := rfl
 
 /-- Reading an argument tuple for a lifted telescope and lifting it back recovers the
 tuple. -/
@@ -586,13 +463,6 @@ propositionally the expected one — keeps every argument. -/
   rw [List.length_map, List.length_range] at hi
   rw [List.getElem_map, List.getElem_range, id, List.getD_eq_getElem?_getD,
     List.getElem?_eq_getElem, Option.getD_some]
-
-/-- Reindexing only depends on the renaming at the positions it produces. -/
-theorem TeleArg.reindex_congr {X : Type u} (dflt : X) {ρ σ : ℕ → ℕ} {n m : ℕ}
-    (a : TeleArg (Tele.uniform X m)) (h : ∀ i < n, ρ i = σ i) :
-    a.reindex dflt ρ n = a.reindex dflt σ n := by
-  rw [TeleArg.reindex, TeleArg.reindex]
-  exact congrArg _ (List.map_congr_left fun i hi => by rw [h i (List.mem_range.mp hi)])
 
 /-! ### Blocks of a tuple -/
 

@@ -96,19 +96,18 @@ def Asrt.pointsToManyOpt (l : Loc) (vs : List (Option Val)) : Asrt :=
 /-! ## Symbolic triples
 
 A symbolic triple over a telescope `tt` is a triple whose components are functions of the
-symbolic values `tt` binds.  The telescope lives one universe above the assertions,
-`tt : Tele.{u + 1}` for assertions `Asrt.{u}`, so that it may bind typed subvariants, which
-store assertions.  Small types such as `Expr` are lifted into that universe (`LExpr`,
-`symTele`). -/
+symbolic values `tt` binds, i.e. of an environment `TeleArg tt`.  The telescope lives one
+universe above the assertions, `tt : Tele.{u + 1}` for assertions `Asrt.{u}`, so that it may
+bind typed subvariants, which store assertions.  Small binder types are lifted into that
+universe (`symTele`); small *result* types such as `Expr` need no lifting, since a function
+`TeleArg tt → Expr` already lives in the universe of `TeleArg tt`. -/
 
-/-- Expressions, lifted into the universe of the telescopes of the logic. -/
-abbrev LExpr : Type u := Lifted.{u} Expr
-/-- Symbolic assertions over the telescope `tt`: telescopic functions of its symbolic values
-into assertions. -/
-abbrev SymAsrt (tt : Tele.{u + 1}) : Type (u + 1) := tt -t> Asrt.{u}
-/-- Symbolic expressions over the telescope `tt`: telescopic functions of its symbolic values
-into (lifted) expressions. -/
-abbrev SymExpr (tt : Tele.{u + 1}) : Type (u + 1) := tt -t> LExpr.{u + 1}
+/-- Symbolic assertions over the telescope `tt`: assertions depending on an environment of the
+symbolic values `tt` binds. -/
+abbrev SymAsrt (tt : Tele.{u + 1}) : Type (u + 1) := TeleArg tt → Asrt.{u}
+/-- Symbolic expressions over the telescope `tt`: expressions depending on an environment of
+the symbolic values `tt` binds. -/
+abbrev SymExpr (tt : Tele.{u + 1}) : Type (u + 1) := TeleArg tt → Expr
 
 /-- The telescope of the logic binding the symbolic values of a small telescope `tt`. -/
 abbrev symTele (tt : Tele.{u}) : Tele.{u + 1} := Tele.ulift.{u, u + 1} tt
@@ -116,7 +115,7 @@ abbrev symTele (tt : Tele.{u}) : Tele.{u + 1} := Tele.ulift.{u, u + 1} tt
 /-- The symbolic assertion over the symbolic values of a small telescope given by an ordinary
 function of those values. -/
 def symAsrt {tt : Tele.{u}} (F : TeleArg tt → Asrt.{u}) : SymAsrt (symTele tt) :=
-  teleBind fun args => F args.ulower
+  fun args => F args.ulower
 
 /-- Termination tags at the logic level. -/
 inductive LExit
@@ -199,19 +198,19 @@ abbrev PolyExpr (n : ℕ) (tt : Tele.{u}) : Type (u + 1) := SymExpr (polyTele.{u
 subvariants. -/
 def PolyAsrt.at {n : ℕ} {tt : Tele.{u}} (P : PolyAsrt n tt) (args : TeleArg tt)
     (S : SubvArgs.{u} n) : Asrt.{u} :=
-  TeleFun.apply P ((TeleArg.uliftArg args).app S)
+  P ((TeleArg.uliftArg args).app S)
 
 /-- The poly assertion given by an ordinary function of the symbolic values and of the typed
 subvariants. -/
 def polyAsrt {n : ℕ} {tt : Tele.{u}} (F : TeleArg tt → SubvArgs.{u} n → Asrt.{u}) :
     PolyAsrt n tt :=
-  teleBind fun args => F args.fst.ulower args.snd
+  fun args => F args.fst.ulower args.snd
 
 /-- The poly program given by an ordinary function of the symbolic values and of the typed
 subvariants. -/
 def polyExpr {n : ℕ} {tt : Tele.{u}} (e : TeleArg tt → SubvArgs.{u} n → Expr) :
     PolyExpr n tt :=
-  teleLift fun args => e args.fst.ulower args.snd
+  fun args => e args.fst.ulower args.snd
 
 /-! ## Logics and solvers -/
 

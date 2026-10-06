@@ -127,7 +127,7 @@ summary, at any symbolic values `a`, reaches from the empty heap every state the
 of that summary at `a` describes of a value, producing that value. -/
 theorem body_realises (hctx : S.Valid Λ) (hς : IsPick S τ ς)
     (a : TeleArg ς.src.teleOf) (T : TyArgs ς.src.arity) (v : Val) :
-    Realises Λ ((ς.src.fn.body.apply a).apply T)
+    Realises Λ (ς.src.fn.body a T)
       (fun v => ς.ownedAt v (TeleArg.app a (TeleArg.replicate _ Val.unit))
         (SubvArgs.ofTys (TeleArg.replicate _ Ty.unit))) v := by
   intro h hh
@@ -179,7 +179,7 @@ theorem concretise_params (hctx : S.Valid Λ) (hς : IsPick S τ ς)
 source of the picked summary typechecks and takes no input value. -/
 theorem body_safeProgram (hctx : S.Valid Λ) (hς : IsPick S τ ς)
     (a : TeleArg ς.src.teleOf) (T : TyArgs ς.src.arity) (𝕍 : VarCtx) :
-    SafeProgram 𝕍 Λ τ ((ς.src.fn.body.apply a).apply T) := by
+    SafeProgram 𝕍 Λ τ (ς.src.fn.body a T) := by
   obtain ⟨hsafe, -, -⟩ := (valid hctx hς).typechecks.concretise_typechecks a T
   rw [concretise_ty hctx hς a T] at hsafe
   refine safeProgram_subset hsafe ?_
@@ -213,13 +213,6 @@ theorem get_tys (P : TypePicks) {n i : ℕ} (hi : i < n) : (P.tys n).get i = (P.
   · rw [List.getElem?_append_right (by simpa using h), List.getElem?_replicate,
       if_pos (by simp only [List.length_map]; omega), List.getElem?_eq_none h]
     rfl
-
-/-- The first `n` of the picked types for `n + k` type parameters are the picked types for `n`
-type parameters. -/
-@[simp] theorem splitUniform_tys (P : TypePicks) (n k : ℕ) :
-    ((P.tys (n + k)).splitUniform n k).1 = P.tys n :=
-  TyArgs.ext fun _ hi => by
-    rw [TyArgs.get_splitUniform_left _ hi, get_tys P (Nat.lt_add_right _ hi), get_tys P hi]
 
 /-- The symbolic values of the summaries picked for the last of the first `k + 1` type
 parameters are the first block of the tuple. -/
@@ -749,7 +742,7 @@ theorem specStep_frameStep (hctx : S.Valid Λ) (hP : P.Avail S (k + 1))
     (hvals : vals.length = s.fn.params.length)
     (hpre : HProp hp (FunTempl.ownValsAt (owns Λ P D) (fun _ => 0) s.fn.paramCons vals))
     (hdisj : hF ##ₘ hp)
-    (hstep : Λ ⊢ ⟨hF ∪ hp | ((s.fn.body.apply b.fst).apply (P.tys s.arity)).substs
+    (hstep : Λ ⊢ ⟨hF ∪ hp | (s.fn.body b.fst (P.tys s.arity)).substs
       s.fn.paramNames (Term.ofVals vals)⟩ ⇓ᵢ ⟨h' | ε⟩) :
     ∃ (vals' : List Val) (hp' : Heap),
       vals'.length = (P.specStep m k s).fn.params.length ∧
@@ -757,9 +750,8 @@ theorem specStep_frameStep (hctx : S.Valid Λ) (hP : P.Avail S (k + 1))
         vals') ∧
       hF ##ₘ hp' ∧
       Λ ⊢ ⟨hF ∪ hp' |
-          (((P.specStep m k s).fn.body.apply b).apply
-          (P.tys (P.specStep m k s).arity)).substs (P.specStep m k s).fn.paramNames
-          (Term.ofVals vals')⟩ ⇓ᵢ ⟨h' | ε⟩ := by
+          ((P.specStep m k s).fn.body b (P.tys (P.specStep m k s).arity)).substs
+            (P.specStep m k s).fn.paramNames (Term.ofVals vals')⟩ ⇓ᵢ ⟨h' | ε⟩ := by
   have hvalid : s.fn.Valid := htc.src_valid
   have hk : k < k + 1 := Nat.lt_succ_self k
   obtain ⟨rs, vs, h₁, h₂, hw, hrs, hvs, rfl, hdisj12, hh₁, hh₂⟩ :=
@@ -875,12 +867,11 @@ theorem specFoldFn_frameStep (hctx : S.Valid Λ) :
       vals.length = s.fn.params.length →
       HProp hp (FunTempl.ownValsAt (owns Λ P D) (fun _ => 0) s.fn.paramCons vals) →
       hF ##ₘ hp →
-      (Λ ⊢ ⟨hF ∪ hp | ((s.fn.body.apply a.fst).apply (P.tys s.arity)).substs
+      (Λ ⊢ ⟨hF ∪ hp | (s.fn.body a.fst (P.tys s.arity)).substs
         s.fn.paramNames (Term.ofVals vals)⟩ ⇓ᵢ ⟨h' | ε⟩) →
       Λ ⊢ ⟨hF |
-        ((Source.mk _ _ (P.specFoldFn m k s).2).fn.body.apply
-          (P.foldReindexArgs k s.teleOf a)).apply
-        (P.tys (Source.mk _ _ (P.specFoldFn m k s).2).arity)⟩ ⇓ᵢ ⟨h' | ε⟩ := by
+        (Source.mk _ _ (P.specFoldFn m k s).2).fn.body (P.foldReindexArgs k s.teleOf a)
+          (P.tys (Source.mk _ _ (P.specFoldFn m k s).2).arity)⟩ ⇓ᵢ ⟨h' | ε⟩ := by
   intro k
   induction k with
   | zero =>

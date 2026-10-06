@@ -33,7 +33,7 @@ def Summary.SpecReachable (ς : Summary) (Λ : Library) (i : TyIdx) : Prop :=
         (syms.app (TeleArg.ofListPad Val.unit ς.valArity
           (weaveVals i vs rs ς.src.fn.params))) S) →
       ∃ h, HProp h (Source.specPreVals Λ i S (fun _ => 0) ς.src.fn.params rs vs)
-        ∧ (Λ ⊢ ⟨h | ((ς.src.fn.body.apply syms).apply S.tys).substs ς.src.fn.paramNames
+        ∧ (Λ ⊢ ⟨h | (ς.src.fn.body syms S.tys).substs ς.src.fn.paramNames
               (Term.ofVals (weaveVals i vs rs ς.src.fn.params))⟩ ⇓ᵢ ⟨h' | .ok r⟩)
 
 /-- A summary satisfies the strengthened triple at every type parameter of its source. -/

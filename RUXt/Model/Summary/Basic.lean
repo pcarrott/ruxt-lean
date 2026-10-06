@@ -106,23 +106,23 @@ end SummCtx
 /-- The summary of a base type: any value of that type. -/
 def Summary.base : BaseTy → Summary
   | .int => Summary.of
-      ⟨[tele (_ : ℤ)], 0, ⟨[], fun z => .int z, .int, true⟩⟩
-      fun r z => ⌞ r = .int z.down ⌟
+      ⟨[tele (_ : ℤ)], 0, ⟨[], fun ⟨z, ⟨⟩⟩ ⟨⟩ => .int z, .int, true⟩⟩
+      fun r ⟨⟨z⟩, ⟨⟩⟩ => ⌞ r = .int z ⌟
   | .bool => Summary.of
-      ⟨[tele (_ : Bool)], 0, ⟨[], fun b => .bool b, .bool, true⟩⟩
-      fun r b => ⌞ r = .bool b.down ⌟
+      ⟨[tele (_ : Bool)], 0, ⟨[], fun ⟨b, ⟨⟩⟩ ⟨⟩ => .bool b, .bool, true⟩⟩
+      fun r ⟨⟨b⟩, ⟨⟩⟩ => ⌞ r = .bool b ⌟
   | .loc => Summary.of
-      ⟨[tele (_ : Loc)], 0, ⟨[], fun l => .loc l, .loc, true⟩⟩
-      fun r l => ⌞ r = .loc l.down ⌟
+      ⟨[tele (_ : Loc)], 0, ⟨[], fun ⟨l, ⟨⟩⟩ ⟨⟩ => .loc l, .loc, true⟩⟩
+      fun r ⟨⟨l⟩, ⟨⟩⟩ => ⌞ r = .loc l ⌟
   | .unit => Summary.of
-      ⟨[tele], 0, ⟨[], .unit, .unit, true⟩⟩
-      fun r => ⌞ r = .unit ⌟
+      ⟨[tele], 0, ⟨[], fun ⟨⟩ ⟨⟩ => .unit, .unit, true⟩⟩
+      fun r ⟨⟩ => ⌞ r = .unit ⌟
 /-- The summary of the identity type constructor `.param 0`: the result is the input value,
 owning the first subvariant of the typed subvariant supplied for the type parameter. -/
 def Summary.id (Λ : Library) : Summary :=
   Summary.of
-    ⟨[tele], 1, ⟨[("x", .param 0)], fun _ => .var "x", .param 0, true⟩⟩
-    fun r v ts => ⌞ r = v.down ⌟ ∗ ts.get Λ 0 v.down
+    ⟨[tele], 1, ⟨[("x", .param 0)], fun ⟨⟩ _ => .var "x", .param 0, true⟩⟩
+    fun r ⟨⟨v⟩, S, ⟨⟩⟩ => ⌞ r = v ⌟ ∗ S.get Λ 0 v
 
 /-- The type space holding the base summaries and the identity summary. -/
 def SummCtx.base (Λ : Library) : SummCtx :=

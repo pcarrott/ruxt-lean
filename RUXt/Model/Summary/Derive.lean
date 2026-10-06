@@ -122,7 +122,7 @@ def callSource (φ : FunDecl) (f : Fid) (ςs : Picks) : Source where
       -- The result type constructor is that of `φ`
       ty := φ.template.ty
       safe := .true
-      body := teleBind fun args => teleBind fun types =>
+      body := fun args types =>
         -- Cut out the free type arguments
         let free := types.block .unit φ.arity ςs.freeArity
         -- Call `f` on the parameters of `φ`

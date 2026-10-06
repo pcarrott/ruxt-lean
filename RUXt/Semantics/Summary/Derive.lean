@@ -71,13 +71,13 @@ right after the type parameters of `φ`, as soon as the picked sources fit the p
 (`FunDecl.SrcsFit`). -/
 theorem callSource_body_apply (hfit : SrcsFit φ.arity ςs.srcs φ.template.params)
     (args : TeleArg ςs.teleOf) (types : RUXt.TyArgs (φ.arity + ςs.freeArity)) :
-    (((φ.callSource f ςs).fn.body.apply args).apply types)
-      = (((bindSourcesAux
+    ((φ.callSource f ςs).fn.body args types)
+      = ((bindSourcesAux
           (fun types => .call f (TyArgs.tyParams types) (Term.ofVars φ.template.paramNames))
           (PVar.freshen (max (RUXt.maxNameLen φ.template.paramNames) ςs.maxNameLen))
           φ.template.paramNames φ.template.ty φ.arity
-          (φ.template.paramCons.map TyConsId.params) ςs.srcs).body.apply args).apply types) := by
-  simp only [callSource, teleBind_apply]
+          (φ.template.paramCons.map TyConsId.params) ςs.srcs).body args types) := by
+  simp only [callSource]
   exact Source.bindSources_eq
     (fun types => .call f (TyArgs.tyParams types) (Term.ofVars φ.template.paramNames)) types
     φ.template.params φ.arity ςs.srcs _ args (hfit.imp fun _ _ h => ⟨h.1, h.2.1, h.2.2.1⟩)
@@ -248,13 +248,13 @@ theorem merge_cons {X : Type _} (x : X) f (τ : TyConsId) (ς : Summary)
 subvariants supplied for the first `arity` type parameters of the derived source, the ones
 belonging to the called function. -/
 def mergeTys (ςs : Picks) {arity : ℕ} (S : SubvArgs.{0} (arity + ςs.freeArity)) :
-    TeleLift ςs.tripleTele (List Ty) :=
-  teleLift fun _ => TyArgs.tyParams S.tys
+    TeleArg ςs.tripleTele → List Ty :=
+  fun _ => TyArgs.tyParams S.tys
 
 /-- The results of the picked summaries: the input values of the call. -/
 def mergeVals (ςs : Picks) {arity : ℕ} (S : SubvArgs.{0} (arity + ςs.freeArity)) :
-    TeleLift ςs.tripleTele (List Val) :=
-  teleLift (ςs.merge [] (fun _ r _ _ _ rs => r :: rs) S)
+    TeleArg ςs.tripleTele → List Val :=
+  ςs.merge [] (fun _ r _ _ _ rs => r :: rs) S
 
 private theorem mergeVals_length_aux : ∀ (ςs : Picks) {arity : ℕ}
     (S : SubvArgs.{0} (arity + ςs.freeArity)) (args : TeleArg ςs.tripleTele),
@@ -267,16 +267,15 @@ private theorem mergeVals_length_aux : ∀ (ςs : Picks) {arity : ℕ}
 
 theorem mergeVals_length (ςs : Picks) {arity : ℕ}
     (S : SubvArgs.{0} (arity + ςs.freeArity)) (args : TeleArg ςs.tripleTele) :
-    ((ςs.mergeVals S).at args).length = ςs.length := by
-  rw [mergeVals, teleLift_at]
-  exact mergeVals_length_aux ςs _ args
+    (ςs.mergeVals S args).length = ςs.length :=
+  mergeVals_length_aux ςs _ args
 
 /-- The merged call, written with its type and value projections. -/
 theorem mergeCall_eq (ςs : Picks) (f : Fid) {arity : ℕ}
     (S : SubvArgs.{0} (arity + ςs.freeArity)) (args : TeleArg ςs.tripleTele) :
     PolyExpr.at (ςs.mergeCall f) args S =
-      .call f ((ςs.mergeTys S).at args) (Term.ofVals ((ςs.mergeVals S).at args)) := by
-  rw [mergeCall, polyExpr_at, mergeTys, mergeVals, teleLift_at, teleLift_at]
+      .call f (ςs.mergeTys S args) (Term.ofVals (ςs.mergeVals S args)) := by
+  rw [mergeCall, polyExpr_at, mergeTys, mergeVals]
 
 /-! ### Fitting the picked summaries to the parameters of a call -/
 
@@ -601,9 +600,9 @@ theorem mergeOwned_runs {Λ : Library} (ςs : Picks) (arity : ℕ)
     (hpost : HProp h
       (PolyAsrt.at ςs.mergeOwned (args |>.app values |>.app rvals) S)) :
     ∃ g, Source.Runs Λ (fun C => C.ownsAt Λ S) S.tys ςs.srcs (fun _ => 0) ςs.sels arity args values'
-      ((ςs.mergeVals S).at (args |>.app values |>.app rvals)) g h := by
+      (ςs.mergeVals S (args |>.app values |>.app rvals)) g h := by
   rw [mergeOwned, polyAsrt_at] at hpost
-  rw [mergeVals, teleLift_at]
+  rw [mergeVals]
   exact merge_runs S ςs arity args S (fun _ => 0) values values' rvals h hv hvalid hord hτN le_rfl
     (fun _ _ => rfl) (fun _ _ => rfl) hpost
 
@@ -627,7 +626,7 @@ structure BindCallSourcesSpec (Λ : Library) (φ : FunDecl) (f : Fid) (ςs : Pic
   /-- The merged template is structurally valid. -/
   valid : ((φ.callSource f ςs).fn).Valid
   /-- The merged template produces the result type of the call. -/
-  resTy_apply_eq : ((φ.callSource f ςs).fn).resTy.apply types
+  resTy_apply_eq : ((φ.callSource f ςs).fn).resTy types
     = φ.resTy (types.splitUniform φ.arity ςs.freeArity).1
   /-- The merged template has one parameter per input value of a picked summary. -/
   params_length : ((φ.callSource f ςs).fn).params.length = ςs.valArity
@@ -640,12 +639,12 @@ structure BindCallSourcesSpec (Λ : Library) (φ : FunDecl) (f : Fid) (ςs : Pic
   /-- The body of the merged template is a well-typed program whenever the call it ends in
   is one in the variable context extended by the types the picked summaries produce. -/
   safe : ∀ (args : TeleArg ςs.teleOf) (ν : VarCtx) (τ : Ty),
-    (∀ x τx, (x, τx) ∈ ((φ.callSource f ςs).fn).sig.apply types → ν x = Part.some τx) →
+    (∀ x τx, (x, τx) ∈ ((φ.callSource f ςs).fn).sig types → ν x = Part.some τx) →
     SafeProgram (ν.extend φ.paramNames
         (φ.paramTypes (types.splitUniform φ.arity ςs.freeArity).1)) Λ τ
       (.call f (types.splitUniform φ.arity ςs.freeArity).1.toList
         (Term.ofVars φ.paramNames)) →
-    SafeProgram ν Λ τ ((((φ.callSource f ςs).fn).body.apply args).apply types)
+    SafeProgram ν Λ τ (((φ.callSource f ςs).fn).body args types)
 
 section BindCallSources
 
@@ -820,12 +819,12 @@ theorem callSource_frameStep {Λ : Library} (φ : FunDecl) (f : Fid) (ςs : Pick
     (hstep : Λ ⊢ ⟨hF ∪ h |
       (Expr.call f (S.tys.splitUniform φ.arity ςs.freeArity).1.toList
         (Term.ofVars φ.paramNames)).substs φ.paramNames
-        (Term.ofVals ((ςs.mergeVals S).at
+        (Term.ofVals (ςs.mergeVals S
         (args |>.app values |>.app rvals)))⟩ ⇓ᵢ ⟨h' | εₛ⟩) :
     ∃ hp, HProp hp (((φ.callSource f ςs).fn).ownVals (fun C => C.ownsAt Λ S)
         values.toList)
       ∧ hF ##ₘ hp
-      ∧ Λ ⊢ ⟨hF ∪ hp | ((((φ.callSource f ςs).fn).body.apply args).apply S.tys).substs
+      ∧ Λ ⊢ ⟨hF ∪ hp | (((φ.callSource f ςs).fn).body args S.tys).substs
           ((φ.callSource f ςs).fn).paramNames (Term.ofVals values.toList)⟩
           ⇓ᵢ ⟨h' | εₛ⟩ := by
   /- The sources of the picked summaries are run on the input values of the call, transported
@@ -899,7 +898,7 @@ theorem source_params_valid {Λ : Library} {S : SummCtx} {ςs : Picks}
     (f : Fid) (φ : FunDecl)
     (hbounded : φ.Bounded)
     (hsumm : SummCtx.Valid Λ S) (hpicks : φ.SafePicks S ςs) :
-    ∀ types x τ, (x, τ) ∈ ((φ.callSource f ςs).fn).sig.apply types → τ ∈ types.toList :=
+    ∀ types x τ, (x, τ) ∈ ((φ.callSource f ςs).fn).sig types → τ ∈ types.toList :=
   fun types => φ.callSource_params_valid _ _
     (hpicks.valid hsumm) hbounded hpicks.tyCons_eq types
 
@@ -931,12 +930,12 @@ theorem source_reachable {L : Logic.{0}} (hL : L.Sound) {Λ : Library} {S : Summ
     have hfst : args'.fst = args.fst := rfl
     have hsnd : args'.snd.toList = args.snd.toList := rfl
     obtain ⟨h, hpost, εₛ, hε, hstep⟩ := hux _ Ss r h' hΨ
-    rw [Picks.mergeCall_eq, Picks.mergeTys, teleLift_at] at hstep
+    rw [Picks.mergeCall_eq, Picks.mergeTys] at hstep
     simp only [TyArgs.tyParams] at hstep
     have hstep' : Λ ⊢ ⟨∅ ∪ h |
         (Expr.call f ((SubvArgs.tys Ss).splitUniform φ.arity ςs.freeArity).1.toList
             (Term.ofVars φ.paramNames)).substs φ.paramNames
-          (Term.ofVals ((ςs.mergeVals Ss).at (args'.app rvals)))⟩ ⇓ᵢ ⟨h' | εₛ⟩ := by
+          (Term.ofVals (ςs.mergeVals Ss (args'.app rvals)))⟩ ⇓ᵢ ⟨h' | εₛ⟩ := by
       rw [PFun.empty_union, Expr.substs_call
         (by rw [Picks.mergeVals_length]; exact hlenγ.symm) hdup]
       exact hstep

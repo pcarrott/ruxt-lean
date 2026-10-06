@@ -32,8 +32,8 @@ def LExit.toExit : LExit → Val → Option Exit
 def UXTriple {tt : Tele.{u + 1}} (step : Library → Heap → Expr → Heap → Exit → Prop)
     : Library → SymTriple.{u} tt → Prop
   | Λ, ⟨P, e, εₗ, Φ⟩ =>
-    ∀ args v h', HProp h' ((Φ v).apply args) → ∃ h, HProp h (P.apply args) ∧
-    ∃ εₛ, εₗ.toExit v = some εₛ ∧ step Λ h (e.at args) h' εₛ
+    ∀ args v h', HProp h' (Φ v args) → ∃ h, HProp h (P args) ∧
+    ∃ εₛ, εₗ.toExit v = some εₛ ∧ step Λ h (e args) h' εₛ
 /-- Under-approximate semantic triples for the instrumented semantics. -/
 def UXFrameTriple {tt : Tele.{u + 1}} : Library → SymTriple.{u} tt → Prop := UXTriple FrameStep
 /-- Under-approximate semantic triples for the full semantics. -/
@@ -42,8 +42,8 @@ def UXFullTriple {tt : Tele.{u + 1}} : Library → SymTriple.{u} tt → Prop := 
 /-- Maps a triple with a `miss` exit to one with an `err` exit, the missing location (lifted
 into `Type u`) being existentially quantified. -/
 def mapMissToErr {tt : Tele.{u + 1}} : SymTriple.{u} tt → SymTriple.{u} tt
-  | ⟨P, e, .lmiss, Φ⟩ => ⟨P, e, .lerr, fun v => teleBind (fun args =>
-      ⌞ v = .unit ⌟ ∗ .ex fun l : ULift.{u, 0} Loc => (Φ (.loc l.down)).apply args)⟩
+  | ⟨P, e, .lmiss, Φ⟩ => ⟨P, e, .lerr, fun v args =>
+      ⌞ v = .unit ⌟ ∗ .ex fun l : ULift.{u, 0} Loc => Φ (.loc l.down) args⟩
   | triple => triple
 /-- Preserved behaviour between the instrumented and the full triples. -/
 theorem uxFullTriple_of_uxFrameTriple {tt : Tele.{u + 1}} {Λ : Library} {triple : SymTriple.{u} tt}
@@ -60,20 +60,16 @@ theorem uxFullTriple_of_uxFrameTriple {tt : Tele.{u + 1}} {Λ : Library} {triple
     let .unit := v
     cases Hε
     exact ⟨h, hP, .err, rfl, hstep⟩
-  · rw [teleBind_apply] at hΦ
-    obtain ⟨h1', h', rfl, hdisj, ⟨rfl, rfl⟩, hΦ⟩ := hΦ
-    rw [<- PFun.eq_empty_union]
-    obtain ⟨⟨l⟩, hΦ⟩ := hΦ
+  · obtain ⟨rfl, _, _, hΦ⟩ := hΦ
     obtain ⟨h, hP, ε, Hε, hstep⟩ := hux _ _ _ hΦ
-    obtain hstep := semantics_preservation hstep
     cases Hε
-    exact ⟨h, hP, .err, rfl, hstep⟩
+    exact ⟨h, hP, .err, rfl, semantics_preservation hstep⟩
 
 theorem uxFrameTriple_spec {tt : Tele.{u + 1}} {Λ : Library}
     {P : SymAsrt tt} {e : SymExpr tt} {εₗ : LExit} {Φ : Val → SymAsrt tt}
     (hux : UXFrameTriple Λ ⟨P, e, εₗ, Φ⟩) :
-    ∀ args r h', HProp h' ((Φ r).apply args) → ∀ ε, εₗ.toExit r = some ε →
-    ∃ h, HProp h (P.apply args) ∧ Λ ⊢ ⟨ h | e.at args ⟩ ⇓ᵢ ⟨ h' | ε ⟩ := by
+    ∀ args r h', HProp h' (Φ r args) → ∀ ε, εₗ.toExit r = some ε →
+    ∃ h, HProp h (P args) ∧ Λ ⊢ ⟨ h | e args ⟩ ⇓ᵢ ⟨ h' | ε ⟩ := by
   intro args r h' hΦ ε hε
   cases εₗ
   · cases hε

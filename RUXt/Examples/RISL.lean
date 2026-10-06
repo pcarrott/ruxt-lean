@@ -20,12 +20,12 @@ universe u
 /-! ### Function specifications -/
 
 /-- A function specification is parameterised over an arbitrary telescope `tt`
-together with a *type projection* `tys : TeleLift tt (List Ty)` and a *value projection*
-`vals : TeleLift tt (List Val)`, which read off, for each instantiation of the telescope, the
+together with a *type projection* `tys : TeleArg tt → List Ty` and a *value projection*
+`vals : TeleArg tt → List Val`, which read off, for each environment of the telescope, the
 list of type arguments the function is instantiated at and the list of concrete argument
 values it is called with. -/
-def FunSpec : Type (u + 2) := (tt : Tele.{u + 1}) × TeleLift tt (List Ty) ×
-  TeleLift tt (List Val) × SymAsrt tt × LExit × (Val → SymAsrt tt)
+def FunSpec : Type (u + 2) := (tt : Tele.{u + 1}) × (TeleArg tt → List Ty) ×
+  (TeleArg tt → List Val) × SymAsrt tt × LExit × (Val → SymAsrt tt)
 
 /-- The exit tag of a function specification. -/
 def FunSpec.exit : FunSpec.{u} → LExit
@@ -54,7 +54,7 @@ theorem SpecCtx.update_apply_ne (Γ : SpecCtx.{u}) {f g : String} (s : FunSpec.{
 /-! ### Triple notation -/
 
 -- Notation for `WfSpec` where the precondition `P`, the program `e` and the
--- postcondition `Q` are supplied as telescoped functions directly:
+-- postcondition `Q` are supplied directly, as functions of the environment:
 -- `Γ ⊢ ⌈P⌉ e ⌈ε, Q⌉`.  The program `e` is parsed at maximal precedence, so an
 -- applied `e` must be parenthesised; this both disambiguates the notation and
 -- avoids a clash with Mathlib's ceiling notation `⌈·⌉`.
@@ -63,30 +63,35 @@ scoped syntax:50 (name := wfSpecNotation) term:51 " ⊢ " "⌈" term "⌉ " term
   " ⌈" term ", " term "⌉" : term
 
 -- Binder form of the `WfSpec` notation:
--- `Γ ⊢ λₗ args, ⌈P⌉ e ⌈ε : λₗ r, Q⌉`.
--- The telescope binders `args` are written once, immediately after `λₗ`, and are
--- shared by the precondition `P`, the program `e` and (together with the result
--- binder `r`) the postcondition `Q`, so they need not be repeated in each component
--- of the triple.  The telescope itself is synthesised from `args`.  As above, `e`
--- is parsed at maximal precedence.
+-- `Γ ⊢ λₗ (x₁ : A₁) … (xₙ : Aₙ), ⌈P⌉ e ⌈ε : λₗ r, Q⌉`.
+-- The telescope binders are written once, immediately after `λₗ`, and are shared by the
+-- precondition `P`, the program `e` and (together with the result binder `r`) the
+-- postcondition `Q`, so they need not be repeated in each component of the triple.  The
+-- telescope `[tele (x₁ : A₁) … (xₙ : Aₙ)]` is synthesised from the binders, and each component
+-- is the function of the environment destructuring it as `⟨x₁, …, xₙ, _⟩`.  As above, `e` is
+-- parsed at maximal precedence.
+/-- A binder `(x : A)` of the `λₗ` notation. -/
+syntax teleBinder := "(" ident " : " term ")"
+
 open Lean Parser Term in
-scoped syntax:50 (name := wfSpecBinderNotation) term:51 " ⊢ " "λₗ" (ppSpace funBinder)* ", "
+scoped syntax:50 (name := wfSpecBinderNotation) term:51 " ⊢ " "λₗ" (ppSpace teleBinder)* ", "
   "⌈" term "⌉ " term:max " ⌈" term " : " "λₗ" ppSpace funBinder ", " term "⌉" : term
 
 macro_rules
   | `($Γ ⊢ ⌈$P⌉ $e ⌈$ε, $Q⌉) => do
       let wf := Lean.mkIdent `RUXt.WfSpec
       `($wf $Γ ⟨$P, $e, $ε, $Q⟩)
-  | `($Γ ⊢ λₗ $bs:funBinder*, ⌈$P⌉ $e ⌈$ε : λₗ $r, $Q⌉) => do
+  | `($Γ ⊢ λₗ $bs:teleBinder*, ⌈$P⌉ $e ⌈$ε : λₗ $r, $Q⌉) => do
       let wf := Lean.mkIdent `RUXt.WfSpec
-      let tl ← `([tele $bs*])
-      -- the program is written as an `Expr`; the triple stores it lifted into the universe
-      -- of the telescope, so the notation inserts the lift.
-      if bs.isEmpty then
-        `($wf $Γ (tt := $tl) ⟨$P, ULift.up $e, $ε, fun $r => $Q⟩)
-      else
-        `($wf $Γ (tt := $tl)
-          ⟨fun $bs* => $P, fun $bs* => ULift.up $e, $ε, fun $r => fun $bs* => $Q⟩)
+      let mut tl ← `(RUXt.Tele.nil)
+      let mut xs : Array (Lean.TSyntax `term) := #[← `(_)]
+      for b in bs.reverse do
+        let `(teleBinder| ($x:ident : $A)) := b | Lean.Macro.throwUnsupported
+        tl ← `(RUXt.Tele.cons fun ($x : $A) => $tl)
+        xs := #[(⟨x.raw⟩ : Lean.TSyntax `term)] ++ xs
+      let env ← if bs.isEmpty then `(_) else `(⟨$xs,*⟩)
+      `($wf $Γ (tt := $tl) ⟨fun ($env : RUXt.TeleArg $tl) => $P,
+          fun ($env : RUXt.TeleArg $tl) => $e, $ε, fun $r ($env : RUXt.TeleArg $tl) => $Q⟩)
 
 /-! ### The RISL proof rules  -/
 
@@ -100,9 +105,9 @@ inductive WfSpec : SpecCtx.{u} → {tt : Tele.{u + 1}} → SymTriple.{u} tt → 
   | error {Γ : SpecCtx} :
       Γ ⊢ λₗ , ⌈ .emp ⌉ (.error) ⌈ .lerr : λₗ r, ⌞ r = .unit ⌟ ⌉
   | letIn {Γ : SpecCtx} {tt : Tele} {x : Binder} {e₁ e₂ : SymExpr tt}
-        {P : SymAsrt tt} {ε : LExit} {Φ Φ' : Val → SymAsrt tt} {v : TeleLift tt Val} :
+        {P : SymAsrt tt} {ε : LExit} {Φ Φ' : Val → SymAsrt tt} {v : TeleArg tt → Val} :
       (Γ ⊢ ⌈P⌉ e₁ ⌈.lok, Φ'⌉) →
-      (Γ ⊢ ⌈teleBind fun args => (Φ' (v.at args)).apply args⌉ (e₂.subst x v) ⌈ε, Φ⌉) →
+      (Γ ⊢ ⌈fun args => Φ' (v args) args⌉ (e₂.subst x v) ⌈ε, Φ⌉) →
       (Γ ⊢ ⌈P⌉ (SymExpr.letIn x e₁ e₂) ⌈ε, Φ⌉)
   | let_cut {Γ : SpecCtx} {tt : Tele} {x : Binder} {e₁ e₂ : SymExpr tt}
         {P : SymAsrt tt} {ε : LExit} {Φ : Val → SymAsrt tt} :
@@ -160,31 +165,29 @@ inductive WfSpec : SpecCtx.{u} → {tt : Tele.{u + 1}} → SymTriple.{u} tt → 
   | frame {Γ : SpecCtx} {tt : Tele} {e : SymExpr tt}
         {P R : SymAsrt tt} {ε : LExit} {Φ : Val → SymAsrt tt} :
       (Γ ⊢ ⌈P⌉ e ⌈ε, Φ⌉) →
-      (Γ ⊢ ⌈teleBind fun args => R.apply args ∗ P.apply args⌉ e
-        ⌈ε, fun v => teleBind fun args => R.apply args ∗ (Φ v).apply args⌉)
+      (Γ ⊢ ⌈fun args => R args ∗ P args⌉ e ⌈ε, fun v args => R args ∗ Φ v args⌉)
   | disj {Γ : SpecCtx} {tt : Tele} {e : SymExpr tt}
         {P₁ P₂ : SymAsrt tt} {ε : LExit} {Φ₁ Φ₂ : Val → SymAsrt tt} :
       (Γ ⊢ ⌈P₁⌉ e ⌈ε, Φ₁⌉) → (Γ ⊢ ⌈P₂⌉ e ⌈ε, Φ₂⌉) →
-      (Γ ⊢ ⌈teleBind fun args => P₁.apply args ∨ₕ P₂.apply args⌉ e
-        ⌈ε, fun v => teleBind fun args => (Φ₁ v).apply args ∨ₕ (Φ₂ v).apply args⌉)
+      (Γ ⊢ ⌈fun args => P₁ args ∨ₕ P₂ args⌉ e ⌈ε, fun v args => Φ₁ v args ∨ₕ Φ₂ v args⌉)
   | cons {Γ Γ' : SpecCtx} {tt tt' : Tele}
         {P : SymAsrt tt} {e : SymExpr tt} {Φ : Val → SymAsrt tt}
         {P' : SymAsrt tt'} {e' : SymExpr tt'} {Φ' : Val → SymAsrt tt'}
         {ε : LExit} (f : TeleArg tt → TeleArg tt') :
       Γ' [⊆] Γ →
-      (∀ args, ⊨ (P'.apply (f args) →ₕ P.apply args)) →
-      (∀ v args, ⊨ (Φ v).apply args →ₕ (Φ' v).apply (f args)) →
-      (∀ args, e.at args = e'.at (f args)) →
+      (∀ args, ⊨ (P' (f args) →ₕ P args)) →
+      (∀ v args, ⊨ Φ v args →ₕ Φ' v (f args)) →
+      (∀ args, e args = e' (f args)) →
       (Γ' ⊢ ⌈P'⌉ e' ⌈ε, Φ'⌉) →
       (Γ ⊢ ⌈P⌉ e ⌈ε, Φ⌉)
   | ex {Γ : SpecCtx} {tt : Tele} {X : Type u} {e : SymExpr tt}
         {P : SymAsrt (Tele.cons (fun _ : ULift.{u + 1, u} X => tt))} {ε : LExit}
         {Φ : Val → SymAsrt (Tele.cons (fun _ : ULift.{u + 1, u} X => tt))} :
       (Γ ⊢ ⌈P⌉ (e.reindex Sigma.snd) ⌈ε, Φ⌉) →
-      (Γ ⊢ ⌈teleBind fun args => .ex fun x : X => P.apply ⟨.up x, args⟩⌉ e
-        ⌈ε, fun v => teleBind fun args => .ex fun x : X => (Φ v).apply ⟨.up x, args⟩⌉)
-  | call {Γ : SpecCtx} {tt : Tele} {f : String} {tys : TeleLift tt (List Ty)}
-      {vals : TeleLift tt (List Val)}
+      (Γ ⊢ ⌈fun args => .ex fun x : X => P ⟨.up x, args⟩⌉ e
+        ⌈ε, fun v args => .ex fun x : X => Φ v ⟨.up x, args⟩⌉)
+  | call {Γ : SpecCtx} {tt : Tele} {f : String} {tys : TeleArg tt → List Ty}
+      {vals : TeleArg tt → List Val}
       {P : SymAsrt tt} {ε : LExit} {Φ : Val → SymAsrt tt} :
       (⟨tt, tys, vals, P, ε, Φ⟩ : FunSpec) ∈ Γ f →
       (Γ ⊢ ⌈P⌉ (SymExpr.call f tys vals) ⌈ε, Φ⌉)
@@ -196,12 +199,11 @@ reindexing). -/
 theorem WfSpec.reindex {Γ : SpecCtx.{u}} {tt tt' : Tele.{u + 1}} {e : SymExpr tt}
     {P : SymAsrt tt} {ε : LExit} {Φ : Val → SymAsrt tt}
     (f : TeleArg tt' → TeleArg tt) (h : Γ ⊢ ⌈P⌉ e ⌈ε, Φ⌉) :
-    Γ ⊢ ⌈teleBind fun args => P.apply (f args)⌉ (e.reindex f)
-        ⌈ε, fun r => teleBind fun args => (Φ r).apply (f args)⌉ :=
+    Γ ⊢ ⌈fun args => P (f args)⌉ (e.reindex f) ⌈ε, fun r args => Φ r (f args)⌉ :=
   .cons f (fun _ => List.Subset.refl _)
-    (fun args => by rw [teleBind_apply]; exact hValid_implies_refl _)
-    (fun r args => by rw [teleBind_apply]; exact hValid_implies_refl _)
-    (fun args => by rw [SymExpr.reindex_at])
+    (fun _ => hValid_implies_refl _)
+    (fun _ _ => hValid_implies_refl _)
+    (fun _ => rfl)
     h
 
 /-- Well-formed specification contexts, `γ ≺ₛ Γ`.
@@ -216,10 +218,10 @@ inductive WfSpecCtx (Λ : Library) : SpecCtx.{u} → Prop
   | empty :
       WfSpecCtx Λ ∅
   | update {Γ Γ' : SpecCtx} {tt : Tele} {f : Fid} {φ : FunDecl}
-        {tys : TeleLift tt φ.TyArgs} {vals : TeleLift tt φ.ValArgs}
+        {tys : TeleArg tt → φ.TyArgs} {vals : TeleArg tt → φ.ValArgs}
         {P : SymAsrt tt} {ε : LExit} {Φ : Val → SymAsrt tt} :
       WfSpecCtx Λ Γ →
-      Γ' = Γ.update ⟨tt, tys.toListLift, vals.toListLift, P, ε, Φ⟩ f →
+      Γ' = Γ.update ⟨tt, TeleArg.toList ∘ tys, TeleArg.toList ∘ vals, P, ε, Φ⟩ f →
       Λ.MapsTo f φ → (Γ ⊢ ⌈P⌉ (SymExpr.body φ tys vals) ⌈ε, Φ⌉) →
       WfSpecCtx Λ Γ'
 @[inherit_doc] scoped infix:50 " ≺ₛ " => WfSpecCtx
@@ -257,33 +259,27 @@ theorem WfSpec.exit_ne_lmiss {Γ : SpecCtx.{u}} {tt : Tele.{u + 1}} {triple : Sy
 
 /-- A sound call triple can be recovered from a sound body triple. -/
 theorem callTriple_of_body {Λ : Library} {f : String} {φ : FunDecl}
-    {tt : Tele.{u + 1}} {tys : TeleLift tt φ.TyArgs} {vals : TeleLift tt φ.ValArgs}
+    {tt : Tele.{u + 1}} {tys : TeleArg tt → φ.TyArgs} {vals : TeleArg tt → φ.ValArgs}
     {P : SymAsrt tt} {ε : LExit} {Φ : Val → SymAsrt tt}
     (hmaps : Λ.MapsTo f φ)
     (hbody : UXFrameTriple Λ ⟨P, SymExpr.body φ tys vals, ε, Φ⟩) :
-    UXFrameTriple Λ ⟨P, SymExpr.call f tys.toListLift vals.toListLift, ε, Φ⟩ := by
+    UXFrameTriple Λ ⟨P, SymExpr.call f (fun args => (tys args).toList)
+      (fun args => (vals args).toList), ε, Φ⟩ := by
   intro args v h' hΦ
   obtain ⟨h, hP, εₛ, hε, hstep⟩ := hbody args v h' hΦ
-  rw [SymExpr.body_at] at hstep
-  refine ⟨h, hP, εₛ, hε, ?_⟩
-  rw [SymExpr.call_at, teleLift_at, teleLift_at]
-  exact .call (Λ.instantiates_concretise hmaps (tys.at args)) hstep
+  exact ⟨h, hP, εₛ, hε, .call (Λ.instantiates_concretise hmaps (tys args)) hstep⟩
 
 /-! #### Soundness of the individual structural proof rules -/
 
 /-- Soundness of the sequencing rule `letIn`. -/
 theorem uxFrameTriple_letIn {Λ : Library} {tt : Tele.{u + 1}} {x : Binder} {e₁ e₂ : SymExpr tt}
-    {P : SymAsrt tt} {ε : LExit} {Φ Φ' : Val → SymAsrt tt} {v : TeleLift tt Val}
+    {P : SymAsrt tt} {ε : LExit} {Φ Φ' : Val → SymAsrt tt} {v : TeleArg tt → Val}
     (h₁ : UXFrameTriple Λ ⟨P, e₁, .lok, Φ'⟩)
-    (h₂ : UXFrameTriple Λ ⟨teleBind fun args => (Φ' (v.at args)).apply args,
-      e₂.subst x v, ε, Φ⟩) :
+    (h₂ : UXFrameTriple Λ ⟨fun args => Φ' (v args) args, e₂.subst x v, ε, Φ⟩) :
     UXFrameTriple Λ ⟨P, SymExpr.letIn x e₁ e₂, ε, Φ⟩ := by
   intro args r h' hΦ
   obtain ⟨h'', hΦ', ε₂, hε₂, hstep₂⟩ := h₂ args r h' hΦ
-  rw [teleBind_apply] at hΦ'
-  rw [SymExpr.subst_at] at hstep₂
-  obtain ⟨h, hP, ε₁, ⟨⟩, hstep₁⟩ := h₁ args (v.at args) h'' hΦ'
-  rw [SymExpr.letIn_at]
+  obtain ⟨h, hP, ε₁, ⟨⟩, hstep₁⟩ := h₁ args (v args) h'' hΦ'
   exact ⟨h, hP, ε₂, hε₂, .letIn hstep₁ hstep₂⟩
 
 /-- Soundness of the short-circuiting sequencing rule `let_cut`. -/
@@ -293,7 +289,7 @@ theorem uxFrameTriple_let_cut {Λ : Library} {tt : Tele.{u + 1}} {x : Binder} {e
     UXFrameTriple Λ ⟨P, SymExpr.letIn x e₁ e₂, ε, Φ⟩ := by
   intro args r h' hΦ
   obtain ⟨h, hP, εₛ, hε, hstep⟩ := h args r h' hΦ
-  simp [SymExpr.letIn_at]
+  simp [SymExpr.letIn_apply]
   refine' ⟨h, hP, εₛ, hε, FrameStep.let_cut hstep _⟩
   cases ε <;> cases r <;> simp_all [LExit.toExit]
   · intro x; subst hε; simp
@@ -306,7 +302,7 @@ theorem uxFrameTriple_choice {Λ : Library} {tt : Tele.{u + 1}} {eᵢ e₁ e₂ 
     UXFrameTriple Λ ⟨P, SymExpr.choice e₁ e₂, ε, Φ⟩ := by
   intro args r h' hΦ
   obtain ⟨h, hP, εₛ, hε, hstep⟩ := h args r h' hΦ
-  simp_all [SymExpr.choice_at]
+  simp_all [SymExpr.choice_apply]
   rcases he with ⟨rfl⟩ | ⟨rfl⟩
   · exact ⟨h, hP, .choice hstep (Or.inl rfl)⟩;
   · exact ⟨h, hP, .choice hstep (Or.inr rfl)⟩
@@ -316,10 +312,8 @@ theorem uxFrameTriple_frame {Λ : Library} {tt : Tele.{u + 1}} {R : SymAsrt tt} 
     {P : SymAsrt tt} {ε : LExit} {Φ : Val → SymAsrt tt}
     (hne : ε ≠ .lmiss)
     (h : UXFrameTriple Λ ⟨P, e, ε, Φ⟩) :
-    UXFrameTriple Λ ⟨teleBind fun args => R.apply args ∗ P.apply args, e, ε,
-      fun v => teleBind fun args => R.apply args ∗ (Φ v).apply args⟩ := by
+    UXFrameTriple Λ ⟨fun args => R args ∗ P args, e, ε, fun v args => R args ∗ Φ v args⟩ := by
   intro args v h' hΦ
-  rw [teleBind_apply] at *
   obtain ⟨hR, hpost, rfl, hdisj, ⟨hhR, hhpost⟩⟩ := hΦ
   obtain ⟨hpre, hP, εₛ, hε, hstep⟩ := h args v hpost hhpost
   obtain ⟨hstepF, hdisj'⟩ | ⟨l, rfl, hdom⟩ := frame_addition hstep hR hdisj.symm
@@ -333,11 +327,10 @@ theorem uxFrameTriple_disj {Λ : Library} {tt : Tele.{u + 1}} {e : SymExpr tt}
     {P₁ P₂ : SymAsrt tt} {ε : LExit} {Φ₁ Φ₂ : Val → SymAsrt tt}
     (h₁ : UXFrameTriple Λ ⟨P₁, e, ε, Φ₁⟩)
     (h₂ : UXFrameTriple Λ ⟨P₂, e, ε, Φ₂⟩) :
-    UXFrameTriple Λ ⟨teleBind fun args => P₁.apply args ∨ₕ P₂.apply args, e, ε,
-      fun v => teleBind fun args => (Φ₁ v).apply args ∨ₕ (Φ₂ v).apply args⟩ := by
+    UXFrameTriple Λ ⟨fun args => P₁ args ∨ₕ P₂ args, e, ε,
+      fun v args => Φ₁ v args ∨ₕ Φ₂ v args⟩ := by
   intro args v h' hΦ
-  simp_all [teleBind_apply]
-  rcases hΦ with ⟨hΦ₁⟩ | ⟨hΦ₂⟩
+  rcases hΦ with hΦ₁ | hΦ₂
   · obtain ⟨h, hP₁, εₛ, hε, hstep⟩ := h₁ args v h' hΦ₁
     exact ⟨h, Or.inl hP₁, εₛ, hε, hstep⟩
   · obtain ⟨h, hP₂, εₛ, hε, hstep⟩ := h₂ args v h' hΦ₂
@@ -348,23 +341,21 @@ theorem uxFrameTriple_ex {Λ : Library} {tt : Tele.{u + 1}} {X : Type u} {e : Sy
     {P : SymAsrt (Tele.cons (fun _ : ULift.{u + 1, u} X => tt))} {ε : LExit}
     {Φ : Val → SymAsrt (Tele.cons (fun _ : ULift.{u + 1, u} X => tt))}
     (h : UXFrameTriple Λ ⟨P, e.reindex Sigma.snd, ε, Φ⟩) :
-    UXFrameTriple Λ ⟨teleBind fun args => .ex fun x : X => P.apply ⟨.up x, args⟩, e, ε,
-      fun v => teleBind fun args => .ex fun x : X => (Φ v).apply ⟨.up x, args⟩⟩ := by
+    UXFrameTriple Λ ⟨fun args => .ex fun x : X => P ⟨.up x, args⟩, e, ε,
+      fun v args => .ex fun x : X => Φ v ⟨.up x, args⟩⟩ := by
   intro args v h' hΦ
-  rw [teleBind_apply] at hΦ
   obtain ⟨x, hx⟩ := hΦ
   obtain ⟨h, hh, εₛ, hε, hstep⟩ := h ⟨.up x, args⟩ v h' hx
-  rw [SymExpr.reindex_at] at hstep
-  exact ⟨h, by rw [teleBind_apply]; exact ⟨x, hh⟩, εₛ, hε, hstep⟩
+  exact ⟨h, ⟨x, hh⟩, εₛ, hε, hstep⟩
 
 /-- Soundness of the (generalised) consequence rule. -/
 theorem uxFrameTriple_cons {Λ : Library} {tt tt' : Tele.{u + 1}} {e : SymExpr tt} {e' : SymExpr tt'}
     {P : SymAsrt tt} {P' : SymAsrt tt'} {ε : LExit}
     {Φ : Val → SymAsrt tt} {Φ' : Val → SymAsrt tt'}
     (f : TeleArg tt → TeleArg tt')
-    (hpre : ∀ args, ⊨ (P'.apply (f args) →ₕ P.apply args))
-    (hpost : ∀ v args, ⊨ (Φ v).apply args →ₕ (Φ' v).apply (f args))
-    (hexpr : ∀ args, e.at args = e'.at (f args))
+    (hpre : ∀ args, ⊨ (P' (f args) →ₕ P args))
+    (hpost : ∀ v args, ⊨ Φ v args →ₕ Φ' v (f args))
+    (hexpr : ∀ args, e args = e' (f args))
     (h : UXFrameTriple Λ ⟨P', e', ε, Φ'⟩) :
     UXFrameTriple Λ ⟨P, e, ε, Φ⟩ := by
   intro args v h' hΦ
@@ -376,32 +367,32 @@ theorem uxFrameTriple_cons {Λ : Library} {tt tt' : Tele.{u + 1}} {e : SymExpr t
 /-- Soundness of the `pure` rule. -/
 theorem uxFrameTriple_pure {Λ : Library} :
     UXFrameTriple (tt := [tele (_ : Lifted.{u + 1} Pure)]) Λ ⟨fun _ => .emp,
-      fun p => .up (.pure p.down),
-      .lok, fun r p => ⌞ some r = Pure.eval p.down ⌟⟩ := by
-  rintro p r h' ⟨rfl, hΦ⟩
-  simp_all [TeleFun.apply]
+      fun ⟨p, _⟩ => .pure p.down,
+      .lok, fun r ⟨p, _⟩ => ⌞ some r = Pure.eval p.down ⌟⟩ := by
+  rintro ⟨⟨p⟩, ⟨⟩⟩ r h' ⟨rfl, hΦ⟩
+  simp_all
   exact ⟨_, rfl, .pure hΦ.symm⟩
 
 /-- Soundness of the `assume` rule. -/
 theorem uxFrameTriple_assume {Λ : Library} :
-    UXFrameTriple (tt := [tele]) Λ ⟨.emp, .up (.assume .true),
-      .lok, fun r => ⌞ r = .unit ⌟⟩ := by
+    UXFrameTriple (tt := [tele]) Λ ⟨fun _ => .emp, fun _ => .assume .true,
+      .lok, fun r _ => ⌞ r = .unit ⌟⟩ := by
   rintro args v h' ⟨rfl, rfl⟩
   exact ⟨∅, by tauto, .ok .unit, rfl, .assume⟩
 
 /-- Soundness of the `error` rule. -/
 theorem uxFrameTriple_error {Λ : Library} :
-    UXFrameTriple (tt := [tele]) Λ ⟨.emp, .up .error,
-      .lerr, fun r => ⌞ r = .unit ⌟⟩ := by
+    UXFrameTriple (tt := [tele]) Λ ⟨fun _ => .emp, fun _ => .error,
+      .lerr, fun r _ => ⌞ r = .unit ⌟⟩ := by
   rintro args v h' ⟨rfl, rfl⟩
   exact ⟨∅, by tauto, .err, rfl, .error⟩
 
 /-- Soundness of the `alloc` rule. -/
 theorem uxFrameTriple_alloc {Λ : Library} :
-    UXFrameTriple (tt := [tele]) Λ ⟨.emp, .up (.alloc (.int 1)),
-      .lok, fun r => .ex fun l : Lifted.{u} Loc => ⌞ r = .loc l.down ⌟ ∗ l.down ↦?⟩ := by
+    UXFrameTriple (tt := [tele]) Λ ⟨fun _ => .emp, fun _ => .alloc (.int 1),
+      .lok, fun r _ => .ex fun l : Lifted.{u} Loc => ⌞ r = .loc l.down ⌟ ∗ l.down ↦?⟩ := by
   intro r h' h''
-  simp [TeleFun.apply]
+  simp
   rintro x rfl rfl
   exact ⟨_, rfl, .alloc rfl id rfl rfl⟩
 
@@ -409,11 +400,11 @@ theorem uxFrameTriple_alloc {Λ : Library} :
 theorem uxFrameTriple_free {Λ : Library} :
     UXFrameTriple
       (tt := [tele (_ : Lifted.{u + 1} Val) (_ : Lifted.{u + 1} Loc) (_ : Lifted.{u + 1} Val)]) Λ
-    ⟨fun w l v => ⌞ w.down = .loc l.down ⌟ ∗ l.down ↦ v.down,
-    fun w _ _ => .up (.free (.val w.down)),
-    .lok, fun r w l _ => ⌞ w.down = .loc l.down ⌟ ∗ (⌞ r = .unit ⌟ ∗ l.down ↦∅)⟩ := by
+    ⟨fun ⟨w, l, v, _⟩ => ⌞ w.down = .loc l.down ⌟ ∗ l.down ↦ v.down,
+    fun ⟨w, _, _, _⟩ => .free (.val w.down),
+    .lok, fun r ⟨w, l, _, _⟩ => ⌞ w.down = .loc l.down ⌟ ∗ (⌞ r = .unit ⌟ ∗ l.down ↦∅)⟩ := by
   intro ⟨⟨w⟩, ⟨l⟩, ⟨v'⟩, ⟨⟩⟩ v h' hΦ
-  simp_all [TeleFun.apply]
+  simp_all
   refine' ⟨_, rfl, .free rfl ?mapsTo hΦ.2.2.2 ?iDom ?hFreed⟩
   case mapsTo =>
     simp [Heap.MapsTo, PFun.singleton]
@@ -426,11 +417,11 @@ theorem uxFrameTriple_free {Λ : Library} :
 /-- Soundness of the `free_uninit` rule. -/
 theorem uxFrameTriple_free_uninit {Λ : Library} :
     UXFrameTriple (tt := [tele (_ : Lifted.{u + 1} Val) (_ : Lifted.{u + 1} Loc)]) Λ
-      ⟨fun w l => ⌞ w.down = .loc l.down ⌟ ∗ l.down ↦?,
-      fun w _ => .up (.free (.val w.down)),
-      .lok, fun r w l => ⌞ w.down = .loc l.down ⌟ ∗ (⌞ r = .unit ⌟ ∗ l.down ↦∅)⟩ := by
+      ⟨fun ⟨w, l, _⟩ => ⌞ w.down = .loc l.down ⌟ ∗ l.down ↦?,
+      fun ⟨w, _, _⟩ => .free (.val w.down),
+      .lok, fun r ⟨w, l, _⟩ => ⌞ w.down = .loc l.down ⌟ ∗ (⌞ r = .unit ⌟ ∗ l.down ↦∅)⟩ := by
   intro ⟨⟨w⟩, ⟨l⟩, ⟨⟩⟩ r h' hΦ
-  simp_all [TeleFun.apply]
+  simp_all
   refine' ⟨_, rfl, .free rfl ?mapsTo hΦ.2.2.2 ?iDom ?hFreed⟩
   case mapsTo =>
     simp [Heap.MapsTo, PFun.singleton]
@@ -443,11 +434,11 @@ theorem uxFrameTriple_free_uninit {Λ : Library} :
 /-- Soundness of the `free_freed` rule. -/
 theorem uxFrameTriple_free_freed {Λ : Library} :
     UXFrameTriple (tt := [tele (_ : Lifted.{u + 1} Val) (_ : Lifted.{u + 1} Loc)]) Λ
-      ⟨fun w l => ⌞ w.down = .loc l.down ⌟ ∗ l.down ↦∅,
-      fun w _ => .up (.free (.val w.down)), .lerr,
-      fun r w l => ⌞ w.down = .loc l.down ⌟ ∗ (⌞ r = .unit ⌟ ∗ l.down ↦∅)⟩ := by
+      ⟨fun ⟨w, l, _⟩ => ⌞ w.down = .loc l.down ⌟ ∗ l.down ↦∅,
+      fun ⟨w, _, _⟩ => .free (.val w.down), .lerr,
+      fun r ⟨w, l, _⟩ => ⌞ w.down = .loc l.down ⌟ ∗ (⌞ r = .unit ⌟ ∗ l.down ↦∅)⟩ := by
   intro ⟨⟨w⟩, ⟨l⟩, ⟨⟩⟩ r h' hΦ
-  simp_all [TeleFun.apply]
+  simp_all
   exact ⟨_, rfl, .free_err rfl (by simp [Heap.MapsTo, PFun.singleton])⟩
 
 /-- Soundness of the `store` rule. -/
@@ -455,11 +446,11 @@ theorem uxFrameTriple_store {Λ : Library} :
     UXFrameTriple
       (tt := [tele (_ : Lifted.{u + 1} Val) (_ : Lifted.{u + 1} Loc) (_ : Lifted.{u + 1} Val)
         (_ : Lifted.{u + 1} Val)]) Λ
-      ⟨fun w l _ v' => ⌞ w.down = .loc l.down ⌟ ∗ l.down ↦ v'.down,
-      fun w _ v _ => .up (.store (.val w.down) (.val v.down)),
-      .lok, fun r w l v _ => ⌞ w.down = .loc l.down ⌟ ∗ (⌞ r = .unit ⌟ ∗ l.down ↦ v.down)⟩ := by
+      ⟨fun ⟨w, l, _, v', _⟩ => ⌞ w.down = .loc l.down ⌟ ∗ l.down ↦ v'.down,
+      fun ⟨w, _, v, _, _⟩ => .store (.val w.down) (.val v.down),
+      .lok, fun r ⟨w, l, v, _, _⟩ => ⌞ w.down = .loc l.down ⌟ ∗ (⌞ r = .unit ⌟ ∗ l.down ↦ v.down)⟩ := by
   intro ⟨⟨w⟩, ⟨l⟩, ⟨v⟩, ⟨v'⟩, ⟨⟩⟩ r h' hΦ
-  simp_all [TeleFun.apply]
+  simp_all
   refine' ⟨_, rfl, .store rfl rfl ?mapsTo ?iDom ?vStored⟩
   case mapsTo =>
     simp [Heap.MapsTo, PFun.singleton]
@@ -474,11 +465,11 @@ theorem uxFrameTriple_store {Λ : Library} :
 theorem uxFrameTriple_store_uninit {Λ : Library} :
     UXFrameTriple
       (tt := [tele (_ : Lifted.{u + 1} Val) (_ : Lifted.{u + 1} Loc) (_ : Lifted.{u + 1} Val)]) Λ
-      ⟨fun w l _ => ⌞ w.down = .loc l.down ⌟ ∗ l.down ↦?,
-      fun w _ v => .up (.store (.val w.down) (.val v.down)),
-      .lok, fun r w l v => ⌞ w.down = .loc l.down ⌟ ∗ (⌞ r = .unit ⌟ ∗ l.down ↦ v.down)⟩ := by
+      ⟨fun ⟨w, l, _, _⟩ => ⌞ w.down = .loc l.down ⌟ ∗ l.down ↦?,
+      fun ⟨w, _, v, _⟩ => .store (.val w.down) (.val v.down),
+      .lok, fun r ⟨w, l, v, _⟩ => ⌞ w.down = .loc l.down ⌟ ∗ (⌞ r = .unit ⌟ ∗ l.down ↦ v.down)⟩ := by
   intro ⟨⟨w⟩, ⟨l⟩, ⟨v⟩, ⟨⟩⟩ r h' hΦ
-  simp_all [TeleFun.apply]
+  simp_all
   refine' ⟨_, rfl, .store rfl rfl ?mapsTo ?iDom ?vStored⟩
   case mapsTo =>
     simp [Heap.MapsTo, PFun.singleton]
@@ -493,22 +484,22 @@ theorem uxFrameTriple_store_uninit {Λ : Library} :
 theorem uxFrameTriple_store_freed {Λ : Library} :
     UXFrameTriple
       (tt := [tele (_ : Lifted.{u + 1} Val) (_ : Lifted.{u + 1} Loc) (_ : Lifted.{u + 1} Val)]) Λ
-      ⟨fun w l _ => ⌞ w.down = .loc l.down ⌟ ∗ l.down ↦∅,
-      fun w _ v => .up (.store (.val w.down) (.val v.down)),
-      .lerr, fun r w l _ => ⌞ w.down = .loc l.down ⌟ ∗ (⌞ r = .unit ⌟ ∗ l.down ↦∅)⟩ := by
+      ⟨fun ⟨w, l, _, _⟩ => ⌞ w.down = .loc l.down ⌟ ∗ l.down ↦∅,
+      fun ⟨w, _, v, _⟩ => .store (.val w.down) (.val v.down),
+      .lerr, fun r ⟨w, l, _, _⟩ => ⌞ w.down = .loc l.down ⌟ ∗ (⌞ r = .unit ⌟ ∗ l.down ↦∅)⟩ := by
   intro ⟨⟨w⟩, ⟨l⟩, ⟨v⟩, _⟩ r h' hΦ
-  simp_all [TeleFun.apply]
+  simp_all
   exact ⟨_, rfl, .store_err rfl (by simp [Heap.MapsTo, PFun.singleton])⟩
 
 /-- Soundness of the `load` rule. -/
 theorem uxFrameTriple_load {Λ : Library} :
     UXFrameTriple
       (tt := [tele (_ : Lifted.{u + 1} Val) (_ : Lifted.{u + 1} Loc) (_ : Lifted.{u + 1} Val)]) Λ
-      ⟨fun w l v => ⌞ w.down = .loc l.down ⌟ ∗ l.down ↦ v.down,
-      fun w _ _ => .up (.load (.val w.down)), .lok,
-      fun r w l v => ⌞ w.down = .loc l.down ⌟ ∗ (⌞ r = v.down ⌟ ∗ l.down ↦ v.down)⟩ := by
+      ⟨fun ⟨w, l, v, _⟩ => ⌞ w.down = .loc l.down ⌟ ∗ l.down ↦ v.down,
+      fun ⟨w, _, _, _⟩ => .load (.val w.down), .lok,
+      fun r ⟨w, l, v, _⟩ => ⌞ w.down = .loc l.down ⌟ ∗ (⌞ r = v.down ⌟ ∗ l.down ↦ v.down)⟩ := by
   intro ⟨⟨w⟩, ⟨l⟩, ⟨v'⟩, ⟨⟩⟩ v h' hΦ
-  simp_all [TeleFun.apply]
+  simp_all
   refine' ⟨_, rfl, .load rfl ?mapsTo ?vLoaded⟩
   case mapsTo =>
     simp [Heap.MapsTo, PFun.singleton]
@@ -519,11 +510,11 @@ theorem uxFrameTriple_load {Λ : Library} :
 /-- Soundness of the `load_uninit` rule. -/
 theorem uxFrameTriple_load_uninit {Λ : Library} :
     UXFrameTriple (tt := [tele (_ : Lifted.{u + 1} Val) (_ : Lifted.{u + 1} Loc)]) Λ
-      ⟨fun w l => ⌞ w.down = .loc l.down ⌟ ∗ l.down ↦?,
-      fun w _ => .up (.load (.val w.down)), .lerr,
-      fun r w l => ⌞ w.down = .loc l.down ⌟ ∗ (⌞ r = .unit ⌟ ∗ l.down ↦?)⟩ := by
+      ⟨fun ⟨w, l, _⟩ => ⌞ w.down = .loc l.down ⌟ ∗ l.down ↦?,
+      fun ⟨w, _, _⟩ => .load (.val w.down), .lerr,
+      fun r ⟨w, l, _⟩ => ⌞ w.down = .loc l.down ⌟ ∗ (⌞ r = .unit ⌟ ∗ l.down ↦?)⟩ := by
   intro ⟨⟨w⟩, ⟨l⟩, ⟨⟩⟩ v h' hΦ
-  simp_all [TeleFun.apply]
+  simp_all
   refine' ⟨_, rfl, .load_err_block rfl ?mapsTo ?vLoaded⟩
   case mapsTo =>
     simp [Heap.MapsTo, PFun.singleton]
@@ -534,11 +525,11 @@ theorem uxFrameTriple_load_uninit {Λ : Library} :
 /-- Soundness of the `load_freed` rule. -/
 theorem uxFrameTriple_load_freed {Λ : Library} :
     UXFrameTriple (tt := [tele (_ : Lifted.{u + 1} Val) (_ : Lifted.{u + 1} Loc)]) Λ
-      ⟨fun w l => ⌞ w.down = .loc l.down ⌟ ∗ l.down ↦∅,
-      fun w _ => .up (.load (.val w.down)), .lerr,
-      fun r w l => ⌞ w.down = .loc l.down ⌟ ∗ (⌞ r = .unit ⌟ ∗ l.down ↦∅)⟩ := by
+      ⟨fun ⟨w, l, _⟩ => ⌞ w.down = .loc l.down ⌟ ∗ l.down ↦∅,
+      fun ⟨w, _, _⟩ => .load (.val w.down), .lerr,
+      fun r ⟨w, l, _⟩ => ⌞ w.down = .loc l.down ⌟ ∗ (⌞ r = .unit ⌟ ∗ l.down ↦∅)⟩ := by
   intro ⟨⟨w⟩, ⟨l⟩, ⟨⟩⟩ v h' hΦ
-  simp_all [TeleFun.apply]
+  simp_all
   exact ⟨_, rfl, .load_err rfl (by simp [Heap.MapsTo, PFun.singleton])⟩
 
 /-- Soundness of the RISL proof rules relative to a sound, `lmiss`-free
