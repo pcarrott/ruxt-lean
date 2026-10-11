@@ -23,7 +23,7 @@ lake build
   heap, given in two forms — the full semantics `⇓` (`BigStep`) and an instrumented one `⇓ᵢ`
   (`FrameStep`) — together with the frame properties (`frame_addition`, `frame_subtraction`) and
   the relation between the two (`semantics_preservation`).
-* **Assertions and program logics.** A separation-logic assertion language (`Asrt`), symbolic
+* **Assertions and program logics.** A separation-logic assertion language (`Asrt`) with opaque predicates, symbolic
   assertions, programs and triples parametric on the symbolic values bound by a telescope, and
   triples parametric on *typed subvariants*.  A program logic (`Logic`) is an abstract
   derivability relation on triples, sound (`Logic.Sound`) when every triple it derives holds

@@ -254,7 +254,7 @@ theorem FunTempl.ownValsAt_reindex_of_inj {Λ : Library} {M n : ℕ} (S : SubvAr
 well-typed program of type `Ty.unit` producing `Val.unit` from no resources. -/
 theorem hProp_empty_opaque_unit (Λ : Library) :
     HProp (∅ : Heap) (.opaque Λ Ty.unit Val.unit) :=
-  ⟨.unit, FrameStep.pure rfl, safe_pure⟩
+  ⟨.unit, BigStep.pure rfl, safe_pure⟩
 
 /-- The unit value owns the resources of every subvariant of the placeholder typed
 subvariant — the unit type with no subvariant at all — in the empty state: past the empty

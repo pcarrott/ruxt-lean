@@ -522,22 +522,14 @@ theorem semantics_preservation {Λ : Library} {h e h' ε}
 
 /-! ### Reachable heaps are finite -/
 
-/-- Every command of the instrumented semantics adds at most one block to the state, so a
-heap reachable from a finite heap is finite. -/
-theorem FrameStep.dom_finite {Λ : Library} {h h' : Heap} {e : Expr} {ε : Exit}
-    (hstep : Λ ⊢ ⟨h | e⟩ ⇓ᵢ ⟨h' | ε⟩) : h.dom.Finite → h'.dom.Finite := by
+/-- Every command adds at most one block to the state, so a heap reachable from a finite heap
+is finite. -/
+theorem BigStep.dom_finite {Λ : Library} {h h' : Heap} {e : Expr} {ε : Exit}
+    (hstep : Λ ⊢ ⟨h | e⟩ ⇓ ⟨h' | ε⟩) : h.dom.Finite → h'.dom.Finite := by
   induction hstep with
-  | letIn _ _ ih₁ ih₂ => exact fun hfin => ih₂ (ih₁ hfin)
-  | let_cut _ _ ih => exact ih
-  | choice _ _ ih => exact ih
-  | call _ _ ih => exact ih
+  | letIn _ _ ih₁ ih₂ => exact ih₂ ∘ ih₁
   | alloc _ _ _ heq | free _ _ _ _ heq | store _ _ _ _ heq =>
-      intro hfin
-      subst heq
-      simp only [Heap.store, Heap.free, Heap.update, PFun.dom_insert]
-      exact (Set.finite_singleton _).union hfin
-  | pure | assume | error | free_err | free_err_block | free_miss | free_miss_block
-  | store_err | store_miss | store_miss_block | load | load_err | load_err_block
-  | load_miss | load_miss_block => exact id
+    subst heq; simp [Heap.update, PFun.dom_insert]
+  | _ => first | assumption | exact id
 
 end RUXt

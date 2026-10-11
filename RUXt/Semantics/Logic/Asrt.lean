@@ -103,7 +103,7 @@ def HProp (h : Heap) : Asrt → Prop
   | .emp => h = ∅
   | .single ⟨b, i⟩ bv => h = PFun.singleton b bv ∧ i = 0
   | .star a₁ a₂ => ∃ h₁ h₂, h = h₁ ∪ h₂ ∧ h₁ ##ₘ h₂ ∧ HProp h₁ a₁ ∧ HProp h₂ a₂
-  | .opaque Λ τ v => ∃ e, Λ ⊢ ⟨ ∅ | e ⟩ ⇓ᵢ ⟨ h | .ok v ⟩ ∧ SafeMain Λ τ e
+  | .opaque Λ τ v => ∃ e, Λ ⊢ ⟨ ∅ | e ⟩ ⇓ ⟨ h | .ok v ⟩ ∧ SafeMain Λ τ e
 
 /-- `P ⊨ Q`: every heap satisfying `P` has a subheap satisfying `Q`. -/
 def HModels (P Q : Asrt) : Prop :=
@@ -330,9 +330,8 @@ theorem hValid_star_emp_right (P : Asrt) : ⊨ (P →ₕ P ∗ .emp) :=
 /-- The state owning the opaque resource of a value is finite: it is reached from the empty
 state by running a program. -/
 theorem hProp_opaque_finite {Λ : Library} {τ : Ty} {v : Val} {h : Heap}
-    (hh : HProp h (.opaque Λ τ v)) : h.dom.Finite := by
-  obtain ⟨e, hstep, -⟩ := hh
-  exact hstep.dom_finite (by simp)
+    (hh : HProp h (.opaque Λ τ v)) : h.dom.Finite :=
+  hh.choose_spec.1.dom_finite (by simp)
 
 /-! ### Properties: safe programs -/
 
